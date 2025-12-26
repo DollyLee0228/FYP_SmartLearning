@@ -10,7 +10,7 @@ import { Sparkles, ArrowRight, RotateCcw } from 'lucide-react';
 export function LevelAssessment() {
   const navigate = useNavigate();
   const { setUserLevel } = useLearning();
-  const questions = getQuestionsForAssessment();
+  const [questions] = useState(getQuestionsForAssessment()); // Initialize once
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -22,7 +22,9 @@ export function LevelAssessment() {
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
 
   const handleAnswerSelect = (answerIndex: number) => {
+    // Prevent selecting if already showing result
     if (showResult) return;
+    
     setSelectedAnswer(answerIndex);
     
     // Immediately show result
@@ -36,9 +38,10 @@ export function LevelAssessment() {
 
   const handleNext = () => {
     if (currentQuestionIndex < questions.length - 1) {
+      // Move to next question and RESET states
       setCurrentQuestionIndex(prev => prev + 1);
-      setSelectedAnswer(null);
-      setShowResult(false);
+      setSelectedAnswer(null); // Reset selected answer
+      setShowResult(false);    // Hide result display
     } else {
       setIsComplete(true);
     }
@@ -101,42 +104,40 @@ export function LevelAssessment() {
             </div>
 
             <div className="py-6 space-y-4">
-              <p className="text-sm text-gray-500 uppercase tracking-wide">Your English Level</p>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="space-y-2"
-              >
-                <div className="text-2xl py-3 px-6 mx-auto w-fit rounded-full bg-cyan-500/20 text-cyan-400 font-semibold">
-                  {level} - {levelInfo.name}
+              <div className="inline-block">
+                <div className={`level-badge-${levelInfo.color} text-lg px-6 py-3`}>
+                  {levelInfo.level} - {levelInfo.name}
                 </div>
-                <p className="text-gray-400">{levelInfo.description}</p>
-              </motion.div>
+              </div>
+              <p className="text-gray-300 max-w-sm mx-auto">
+                {levelInfo.description}
+              </p>
             </div>
 
-            <div className="flex gap-3">
+            <div className="space-y-3">
               <Button
-                variant="outline"
-                className="flex-1 bg-white/5 border-white/10 text-white hover:bg-white/10"
+                onClick={handleStartLearning}
+                size="lg"
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-semibold"
+              >
+                Start Learning
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              <Button
                 onClick={() => {
-                  setIsComplete(false);
                   setCurrentQuestionIndex(0);
                   setSelectedAnswer(null);
                   setShowResult(false);
                   setScore(0);
                   setAnswers([]);
+                  setIsComplete(false);
                 }}
+                variant="outline"
+                size="lg"
+                className="w-full border-white/20 text-white hover:bg-white/5"
               >
                 <RotateCcw className="w-4 h-4 mr-2" />
-                Retake
-              </Button>
-              <Button
-                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
-                onClick={handleStartLearning}
-              >
-                Start Learning
-                <ArrowRight className="w-4 h-4 ml-2" />
+                Retake Assessment
               </Button>
             </div>
           </div>
@@ -146,8 +147,17 @@ export function LevelAssessment() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center p-4">
-      <div className="w-full max-w-xl">
+    <div className="min-h-screen bg-[#0a0f1a] py-8 px-4">
+      <div className="max-w-3xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-display font-bold text-white mb-2">
+            English Level Assessment
+          </h1>
+          <p className="text-gray-400">
+            Answer 15 questions to determine your current level
+          </p>
+        </div>
+
         <AnimatePresence mode="wait">
           <motion.div
             key={currentQuestionIndex}
@@ -233,7 +243,7 @@ export function LevelAssessment() {
                 })}
               </div>
 
-              {/* Action Button */}
+              {/* Action Button - Only show when result is visible */}
               {showResult && (
                 <div className="flex justify-end pt-2">
                   <Button
