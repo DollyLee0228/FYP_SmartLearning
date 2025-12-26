@@ -8,10 +8,55 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+export const supabase = {
   auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+    onAuthStateChange: (callback: any) => {
+      // Return empty subscription
+      return { 
+        data: { 
+          subscription: { 
+            unsubscribe: () => {} 
+          } 
+        } 
+      };
+    },
+    getSession: async () => {
+      return { data: { session: null }, error: null };
+    },
+    signInWithPassword: async () => {
+      return { data: null, error: { message: 'Please use Firebase authentication' } };
+    },
+    signUp: async () => {
+      return { data: null, error: { message: 'Please use Firebase authentication' } };
+    },
+    signOut: async () => {
+      return { error: null };
+    },
+    signInWithOAuth: async () => {
+      return { data: null, error: { message: 'Please use Firebase authentication' } };
+    },
+  },
+  from: (table: string) => ({
+    select: (columns?: string) => ({
+      order: () => Promise.resolve({ data: [], error: null }),
+      eq: () => Promise.resolve({ data: [], error: null }),
+      single: () => Promise.resolve({ data: null, error: null }),
+    }),
+    insert: () => Promise.resolve({ data: null, error: null }),
+    update: () => Promise.resolve({ data: null, error: null }),
+    delete: () => Promise.resolve({ error: null }),
+  }),
+  rpc: async (fn: string, params?: any) => {
+    // Return 'user' role by default for non-admin users
+    if (fn === 'get_user_role') {
+      return { data: 'user', error: null };
+    }
+    return { data: null, error: null };
+  },
+  storage: {
+    from: (bucket: string) => ({
+      upload: () => Promise.resolve({ data: null, error: null }),
+      getPublicUrl: () => ({ data: { publicUrl: '' } }),
+    }),
+  },
+};
