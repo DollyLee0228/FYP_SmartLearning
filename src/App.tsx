@@ -29,42 +29,44 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <LearningProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/auth" element={<AuthPage />} />
-            <Route path="/quiz" element={<LevelAssessment />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/modules/grammar" element={<GrammarModule />} />
-            <Route path="/modules/vocabulary" element={<VocabularyModule />} />
-            <Route path="/modules/reading" element={<ReadingModule />} />
-            <Route path="/modules/listening" element={<ListeningModule />} />
-            <Route path="/modules/writing" element={<WritingModule />} />
-            <Route path="/modules/speaking" element={<SpeakingModule />} />
-            <Route path="/modules/:moduleId/lesson/:lessonId" element={<LessonPage />} />
-            <Route path="/modules/reading/exercise/:exerciseId" element={<ReadingExercisePage />} />
-            <Route path="/modules/writing/exercise/:exerciseId" element={<WritingExercisePage />} />
-            <Route path="/modules/speaking/exercise/:lessonId" element={<SpeakingExercisePage />} />
-            <Route path="/modules/listening/exercise/:lessonId" element={<ListeningExercisePage />} />
-            <Route path="/videos" element={<VideosPage />} />
-            <Route path="/recommendations" element={<RecommendationsPage />} />
-            <Route path="/achievements" element={<AchievementsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/admin" element={<AdminDashboard />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </LearningProvider>
-  </QueryClientProvider>
-);
+// FIX: Correct structure with proper JSX return
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <LearningProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/auth" element={<AuthPage />} />
+              <Route path="/quiz" element={<LevelAssessment />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/modules/grammar" element={<GrammarModule />} />
+              <Route path="/modules/vocabulary" element={<VocabularyModule />} />
+              <Route path="/modules/reading" element={<ReadingModule />} />
+              <Route path="/modules/listening" element={<ListeningModule />} />
+              <Route path="/modules/writing" element={<WritingModule />} />
+              <Route path="/modules/speaking" element={<SpeakingModule />} />
+              <Route path="/lesson/:moduleId/:lessonId" element={<LessonPage />} />
+              <Route path="/exercises/reading/:exerciseId" element={<ReadingExercisePage />} />
+              <Route path="/exercises/writing/:exerciseId" element={<WritingExercisePage />} />
+              <Route path="/exercises/speaking/:exerciseId" element={<SpeakingExercisePage />} />
+              <Route path="/exercises/listening/:exerciseId" element={<ListeningExercisePage />} />
+              <Route path="/videos" element={<VideosPage />} />
+              <Route path="/recommendations" element={<RecommendationsPage />} />
+              <Route path="/achievements" element={<AchievementsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </LearningProvider>
+    </QueryClientProvider>
+  );
+}
 
 export default App;
