@@ -10,35 +10,65 @@ import { Sparkles, ArrowRight, RotateCcw } from 'lucide-react';
 export function LevelAssessment() {
   const navigate = useNavigate();
   const { setUserLevel } = useLearning();
-  const [questions] = useState(getQuestionsForAssessment()); // Initialize once
+  const [questions] = useState(getQuestionsForAssessment());
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [score, setScore] = useState(0);
-  const [answers, setAnswers] = useState<boolean[]>([]);
+  const [userAnswers, setUserAnswers] = useState<Array<{questionIndex: number, answer: number, isCorrect: boolean}>>([]);
   const [isComplete, setIsComplete] = useState(false);
 
   const currentQuestion = questions[currentQuestionIndex];
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
 
   const handleAnswerSelect = (answerIndex: number) => {
-  if (showResult) return; // Only if not submitted yet
-  setSelectedAnswer(answerIndex); // Just select, don't show result
-};
+    // Allow changing answer ONLY if result is not shown yet
+    if (showResult) return;
+    
+    // Just set the selected answer, don't show result yet
+    setSelectedAnswer(answerIndex);
+  };
 
-const handleSubmitAnswer = () => {
-  // Separate function to submit
-  setShowResult(true); // ✅ Only when user clicks "Submit"
-};
+  const handleSubmitAnswer = () => {
+    if (selectedAnswer === null) return;
+    
+    // Check if answer is correct
+    const isCorrect = selectedAnswer === currentQuestion.correctAnswer;
+    
+    // Update score immediately
+    if (isCorrect) {
+      setScore(prevScore => prevScore + 1);
+    }
+    
+    // Store the answer
+    setUserAnswers(prev => [...prev, {
+      questionIndex: currentQuestionIndex,
+      answer: selectedAnswer,
+      isCorrect: isCorrect
+    }]);
+    
+    // Show the result
+    setShowResult(true);
+    
+    // Debug log
+    console.log('Question:', currentQuestionIndex + 1);
+    console.log('Selected:', selectedAnswer);
+    console.log('Correct:', currentQuestion.correctAnswer);
+    console.log('Is Correct:', isCorrect);
+    console.log('Current Score:', isCorrect ? score + 1 : score);
+  };
 
   const handleNext = () => {
     if (currentQuestionIndex < questions.length - 1) {
       // Move to next question and RESET states
       setCurrentQuestionIndex(prev => prev + 1);
-      setSelectedAnswer(null); // Reset selected answer
-      setShowResult(false);    // Hide result display
+      setSelectedAnswer(null);
+      setShowResult(false);
     } else {
+      // Complete the quiz
       setIsComplete(true);
+      console.log('Final Score:', score);
+      console.log('User Answers:', userAnswers);
     }
   };
 
@@ -55,10 +85,18 @@ const handleSubmitAnswer = () => {
   const handleStartLearning = () => {
     const level = calculateLevel();
     setUserLevel(level, score);
-    // Store level temporarily and redirect to auth
     localStorage.setItem('smartlearning_pending_level', level);
     localStorage.setItem('smartlearning_pending_score', String(score));
     navigate('/auth');
+  };
+
+  const handleRetake = () => {
+    setCurrentQuestionIndex(0);
+    setSelectedAnswer(null);
+    setShowResult(false);
+    setScore(0);
+    setUserAnswers([]);
+    setIsComplete(false);
   };
 
   const getLevelLabel = () => {
@@ -96,6 +134,9 @@ const handleSubmitAnswer = () => {
               <p className="text-gray-400">
                 You answered {score} out of {questions.length} questions correctly
               </p>
+              <p className="text-sm text-gray-500">
+                Score: {Math.round((score / questions.length) * 100)}%
+              </p>
             </div>
 
             <div className="py-6 space-y-4">
@@ -119,14 +160,7 @@ const handleSubmitAnswer = () => {
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
               <Button
-                onClick={() => {
-                  setCurrentQuestionIndex(0);
-                  setSelectedAnswer(null);
-                  setShowResult(false);
-                  setScore(0);
-                  setAnswers([]);
-                  setIsComplete(false);
-                }}
+                onClick={handleRetake}
                 variant="outline"
                 size="lg"
                 className="w-full border-white/20 text-white hover:bg-white/5"
@@ -165,8 +199,13 @@ const handleSubmitAnswer = () => {
               {/* Header with progress */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-400">Question {currentQuestionIndex + 1} of {questions.length}</span>
-                  <span className="text-cyan-400 font-medium">{getLevelLabel()}</span>
+                  <span className="text-gray-400">
+                    Question {currentQuestionIndex + 1} of {questions.length}
+                  </span>
+                  <div className="flex items-center gap-4">
+                    <span className="text-cyan-400 font-medium">{getLevelLabel()}</span>
+                    <span className="text-gray-500">Score: {score}/{currentQuestionIndex}</span>
+                  </div>
                 </div>
                 
                 {/* Progress bar */}
@@ -211,7 +250,7 @@ const handleSubmitAnswer = () => {
                           : isSelected
                           ? 'border-cyan-500 bg-cyan-500/10'
                           : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
-                      }`}
+                      } ${showResult ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                     >
                       <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
                         showCorrect
@@ -260,7 +299,6 @@ const handleSubmitAnswer = () => {
                 )}
               </div>
             </div>
-            
           </motion.div>
         </AnimatePresence>
       </div>
