@@ -1,7 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/config/firebase';
-import { useAuth } from '@/hooks/useAuth';
 import { EnglishLevel, UserProgress, LearningStreak } from '@/types/learning';
 
 interface LearningContextType {
@@ -10,7 +7,6 @@ interface LearningContextType {
   setUserLevel: (level: EnglishLevel, score: number) => void;
   updateStreak: () => void;
   resetProgress: () => void;
-  loading: boolean;
 }
 
 const defaultStreak: LearningStreak = {
@@ -29,56 +25,31 @@ const defaultProgress: UserProgress = {
   moduleProgress: {},
 };
 
-const LearningContext = createContext(undefined);
+const LearningContext = createContext<LearningContextType | undefined>(undefined);
 
+// FIX: Make sure the component returns JSX correctly
 export function LearningProvider({ children }: { children: ReactNode }) {
   const [hasCompletedAssessment, setHasCompletedAssessment] = useState(false);
-  const [userProgress, setUserProgress] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const [userProgress, setUserProgress] = useState<UserProgress | null>(null);
 
   useEffect(() => {
-    if (user) {
-      // Fetch user progress from Firestore
-      fetchUserProgress(user.uid);
-    } else {
-      // Fall back to localStorage for non-authenticated users
-      const savedProgress = localStorage.getItem('smartlearning_progress');
-      const savedAssessment = localStorage.getItem('smartlearning_assessment');
-      
-      if (savedProgress) {
+    // Check localStorage for existing progress
+    const savedProgress = localStorage.getItem('smartlearning_progress');
+    const savedAssessment = localStorage.getItem('smartlearning_assessment');
+    
+    if (savedProgress) {
+      try {
         setUserProgress(JSON.parse(savedProgress));
+      } catch (error) {
+        console.error('Error parsing saved progress:', error);
       }
-      if (savedAssessment === 'completed') {
-        setHasCompletedAssessment(true);
-      }
-      setLoading(false);
     }
-  }, [user]);
-
-  const fetchUserProgress = async (userId: string) => {
-    try {
-      const progressDoc = await getDoc(doc(db, 'userProgress', userId));
-      
-      if (progressDoc.exists()) {
-        const data = progressDoc.data() as UserProgress;
-        setUserProgress(data);
-        setHasCompletedAssessment(true);
-      } else {
-        // No progress yet, check localStorage
-        const savedProgress = localStorage.getItem('smartlearning_progress');
-        if (savedProgress) {
-          setUserProgress(JSON.parse(savedProgress));
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching user progress:', error);
-    } finally {
-      setLoading(false);
+    if (savedAssessment === 'completed') {
+      setHasCompletedAssessment(true);
     }
-  };
+  }, []);
 
-  const setUserLevel = async (level: EnglishLevel, score: number) => {
+  const setUserLevel = (level: EnglishLevel, score: number) => {
     const today = new Date().toISOString().split('T')[0];
     const newProgress: UserProgress = {
       ...defaultProgress,
@@ -105,24 +76,9 @@ export function LearningProvider({ children }: { children: ReactNode }) {
     setHasCompletedAssessment(true);
     localStorage.setItem('smartlearning_progress', JSON.stringify(newProgress));
     localStorage.setItem('smartlearning_assessment', 'completed');
-
-    // Save to Firestore if user is logged in
-    if (user) {
-      try {
-        await setDoc(doc(db, 'userProgress', user.uid), newProgress);
-        
-        // Also update user's English level
-        await updateDoc(doc(db, 'users', user.uid), {
-          englishLevel: level,
-          lastActive: new Date().toISOString()
-        });
-      } catch (error) {
-        console.error('Error saving progress to Firestore:', error);
-      }
-    }
   };
 
-  const updateStreak = async () => {
+  const updateStreak = () => {
     if (!userProgress) return;
     
     const today = new Date().toISOString().split('T')[0];
@@ -134,57 +90,51 @@ export function LearningProvider({ children }: { children: ReactNode }) {
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
     
-    const newStreak = {
-      current: lastActive === yesterdayStr ? userProgress.streak.current + 1 : 1,
-      longest: Math.max(
-        userProgress.streak.longest,
-        lastActive === yesterdayStr ? userProgress.streak.current + 1 : 1
-      ),
-      lastActiveDate: today,
+    let newStreak = 1;
+    if (lastActive === yesterdayStr) {
+      newStreak = userProgress.streak.current + 1;
+    }
+    
+    const updatedProgress: UserProgress = {
+      ...userProgress,
+      streak: {
+        current: newStreak,
+        longest: Math.max(newStreak, userProgress.streak.longest),
+        lastActiveDate: today,
+      },
     };
     
-    const updatedProgress = { ...userProgress, streak: newStreak };
     setUserProgress(updatedProgress);
     localStorage.setItem('smartlearning_progress', JSON.stringify(updatedProgress));
-
-    // Update Firestore
-    if (user) {
-      try {
-        await updateDoc(doc(db, 'userProgress', user.uid), { streak: newStreak });
-        await updateDoc(doc(db, 'users', user.uid), { lastActive: new Date().toISOString() });
-      } catch (error) {
-        console.error('Error updating streak:', error);
-      }
-    }
   };
 
-  const resetProgress = async () => {
-    setUserProgress(defaultProgress);
+  const resetProgress = () => {
+    setUserProgress(null);
     setHasCompletedAssessment(false);
     localStorage.removeItem('smartlearning_progress');
     localStorage.removeItem('smartlearning_assessment');
-
-    // Delete from Firestore
-    if (user) {
-      try {
-        await setDoc(doc(db, 'userProgress', user.uid), defaultProgress);
-      } catch (error) {
-        console.error('Error resetting progress:', error);
-      }
-    }
   };
 
+  // FIX: Direct return of JSX
   return (
-    
+    <LearningContext.Provider 
+      value={{
+        hasCompletedAssessment,
+        userProgress,
+        setUserLevel,
+        updateStreak,
+        resetProgress,
+      }}
+    >
       {children}
-    
+    </LearningContext.Provider>
   );
 }
 
 export function useLearning() {
   const context = useContext(LearningContext);
-  if (!context) {
-    throw new Error('useLearning must be used within LearningProvider');
+  if (context === undefined) {
+    throw new Error('useLearning must be used within a LearningProvider');
   }
   return context;
 }
