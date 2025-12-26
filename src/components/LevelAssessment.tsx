@@ -22,19 +22,14 @@ export function LevelAssessment() {
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
 
   const handleAnswerSelect = (answerIndex: number) => {
-    // Prevent selecting if already showing result
-    if (showResult) return;
-    
-    setSelectedAnswer(answerIndex);
-    
-    // Immediately show result
-    const isCorrect = answerIndex === currentQuestion.correctAnswer;
-    if (isCorrect) {
-      setScore(prev => prev + 1);
-    }
-    setAnswers(prev => [...prev, isCorrect]);
-    setShowResult(true);
-  };
+  if (showResult) return; // Only if not submitted yet
+  setSelectedAnswer(answerIndex); // Just select, don't show result
+};
+
+const handleSubmitAnswer = () => {
+  // Separate function to submit
+  setShowResult(true); // ✅ Only when user clicks "Submit"
+};
 
   const handleNext = () => {
     if (currentQuestionIndex < questions.length - 1) {
@@ -243,9 +238,18 @@ export function LevelAssessment() {
                 })}
               </div>
 
-              {/* Action Button - Only show when result is visible */}
-              {showResult && (
-                <div className="flex justify-end pt-2">
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-2">
+                {!showResult && selectedAnswer !== null && (
+                  <Button
+                    onClick={handleSubmitAnswer}
+                    className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white px-8"
+                  >
+                    Submit Answer
+                  </Button>
+                )}
+                
+                {showResult && (
                   <Button
                     onClick={handleNext}
                     className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white px-8"
@@ -253,9 +257,10 @@ export function LevelAssessment() {
                     {currentQuestionIndex < questions.length - 1 ? 'Next Question' : 'See Results'}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
+            
           </motion.div>
         </AnimatePresence>
       </div>
