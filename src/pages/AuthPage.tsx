@@ -136,46 +136,74 @@ export default function AuthPage() {
       // Check if there's pending quiz data to save
       const pendingLevel = localStorage.getItem('smartlearning_pending_level');
       const pendingScore = localStorage.getItem('smartlearning_pending_score');
+      const pendingTotal = localStorage.getItem('smartlearning_pending_total');
+      const pendingTime = localStorage.getItem('smartlearning_pending_time');
+      const pendingAnswers = localStorage.getItem('smartlearning_pending_answers');
 
-      if (pendingLevel && pendingScore && pendingQuizData) {
-        // Save quiz results
-        await saveQuizResultsToFirestore(userId, pendingQuizData);
+      // If we have pending quiz data, save it now
+    if (pendingLevel && pendingScore) {
+      console.log('Found pending quiz data, saving to Firestore...');
+      
+      const quizData = {
+        level: pendingLevel,
+        score: parseInt(pendingScore),
+        totalQuestions: pendingTotal ? parseInt(pendingTotal) : 30,
+        timeTaken: pendingTime ? parseInt(pendingTime) : 0,
+        answers: pendingAnswers ? JSON.parse(pendingAnswers) : []
+      };
 
-        // Clear pending data
+      try {
+        // Save quiz results to Firestore
+        await saveQuizResultsToFirestore(userId, quizData);
+        
+        // Clear pending data from localStorage
         localStorage.removeItem('smartlearning_pending_level');
         localStorage.removeItem('smartlearning_pending_score');
         localStorage.removeItem('smartlearning_pending_total');
         localStorage.removeItem('smartlearning_pending_time');
         localStorage.removeItem('smartlearning_pending_answers');
+        
+        // Mark assessment as completed
         localStorage.setItem('smartlearning_assessment', 'completed');
-
+        
+        console.log('Quiz results saved successfully!');
+        toast.success('Your quiz results have been saved!');
+        
+        // Navigate to dashboard
         navigate('/dashboard', { replace: true });
-        return; 
+        return;
+      } catch (error) {
+        console.error('Error saving quiz results:', error);
+        toast.error('Failed to save quiz results');
       }
-
-      // Get user role from Firestore
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        if (userData.role === 'admin') {
-          navigate('/admin');
-        } else {
-          const hasCompletedAssessment = 
-            localStorage.getItem('smartlearning_assessment') === 'completed' ||
-            userData.assessmentCompleted;
-          navigate(hasCompletedAssessment ? '/dashboard' : '/quiz');
-        }
-      } else {
-        // User document doesn't exist, go to quiz
-        navigate('/quiz');
-      }
-    } catch (error) {
-      console.error('Error checking user role:', error);
-      const hasCompletedAssessment = localStorage.getItem('smartlearning_assessment') === 'completed';
-      navigate(hasCompletedAssessment ? '/dashboard' : '/quiz');
     }
+
+    // No pending quiz data, check user's current status
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      
+      if (userData.role === 'admin') {
+        navigate('/admin', { replace: true });
+        return;
+      }
+      
+      const hasCompletedAssessment = 
+        localStorage.getItem('smartlearning_assessment') === 'completed' ||
+        userData.assessmentCompleted === true;
+      
+      navigate(hasCompletedAssessment ? '/dashboard' : '/quiz', { replace: true });
+    } else {
+      navigate('/quiz', { replace: true });
+    }
+  } catch (error) {
+    console.error('Error checking user role:', error);
+    const hasCompletedAssessment = 
+      localStorage.getItem('smartlearning_assessment') === 'completed';
+    navigate(hasCompletedAssessment ? '/dashboard' : '/quiz', { replace: true });
+  }
   };
 
   const validateInputs = (): boolean => {
