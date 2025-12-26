@@ -43,12 +43,21 @@ export function useAuth() {
   }, []);
 
   const signOut = async () => {
-    try {
-      await firebaseSignOut(auth);
-    } catch (error) {
-      console.error('Sign out error:', error);
-    }
-  };
+  try {
+    await firebaseSignOut(auth);
+    
+    // Clear pending quiz data when user signs out
+    localStorage.removeItem('smartlearning_pending_level');
+    localStorage.removeItem('smartlearning_pending_score');
+    localStorage.removeItem('smartlearning_pending_total');
+    localStorage.removeItem('smartlearning_pending_time');
+    localStorage.removeItem('smartlearning_pending_answers');
+    
+    console.log('Signed out and cleared pending quiz data');
+  } catch (error) {
+    console.error('Sign out error:', error);
+  }
+};
 
   return {
     user,
