@@ -32,7 +32,6 @@ import {
   Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { QuestionBuilder, Question } from './QuestionBuilder';
 import { VocabularyBuilder, VocabularyItem } from './VocabularyBuilder';
 import { GrammarBuilder, GrammarRule } from './GrammarBuilder';

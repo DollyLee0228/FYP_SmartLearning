@@ -22,7 +22,8 @@ import {
   User as UserIcon,
   Loader2
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 import { format } from 'date-fns';
 
 interface UserProfile {
