@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { 
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup
+} from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/config/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,38 +30,27 @@ export default function AuthPage() {
 
   useEffect(() => {
     // Check if user is already logged in
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        // Defer the role check to avoid deadlock
-        setTimeout(() => {
-          checkUserRoleAndRedirect(session.user.id);
-        }, 0);
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        await checkUserRoleAndRedirect(user.uid);
       }
     });
 
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        checkUserRoleAndRedirect(session.user.id);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, [navigate]);
 
-  const checkUserRoleAndRedirect = async (userId: string) => {
+    const checkUserRoleAndRedirect = async (userId: string) => {
     try {
-      const { data, error } = await supabase.rpc('get_user_role', { _user_id: userId });
+      const userDoc = await getDoc(doc(db, 'users', userId));
       
       // Check if there's a pending level from quiz completion
       const pendingLevel = localStorage.getItem('smartlearning_pending_level');
       if (pendingLevel) {
-        // Clear pending data and mark assessment as completed
         localStorage.removeItem('smartlearning_pending_level');
         localStorage.removeItem('smartlearning_pending_score');
         localStorage.setItem('smartlearning_assessment', 'completed');
         
-        if (data === 'admin') {
+        if (userDoc.exists() && userDoc.data().role === 'admin') {
           navigate('/admin');
         } else {
           navigate('/dashboard');
@@ -61,14 +58,7 @@ export default function AuthPage() {
         return;
       }
       
-      if (error) {
-        console.error('Error checking role:', error);
-        const hasCompletedAssessment = localStorage.getItem('smartlearning_assessment') === 'completed';
-        navigate(hasCompletedAssessment ? '/dashboard' : '/quiz');
-        return;
-      }
-
-      if (data === 'admin') {
+      if (userDoc.exists() && userDoc.data().role === 'admin') {
         navigate('/admin');
       } else {
         const hasCompletedAssessment = localStorage.getItem('smartlearning_assessment') === 'completed';
@@ -101,24 +91,14 @@ export default function AuthPage() {
     
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        if (error.message.includes('Invalid login credentials')) {
-          toast.error('Invalid email or password');
-        } else {
-          toast.error(error.message);
-        }
-        return;
-      }
-
+      await signInWithEmailAndPassword(auth, email, password);
       toast.success('Signed in successfully!');
-      // Role check and redirect handled by onAuthStateChange
-    } catch (err) {
-      toast.error('An unexpected error occurred');
+    } catch (error: any) {
+      if (error.code === 'auth/invalid-credential') {
+        toast.error('Invalid email or password');
+      } else {
+        toast.error(error.message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -131,30 +111,32 @@ export default function AuthPage() {
     
     setIsLoading(true);
     try {
-      const redirectUrl = `${window.location.origin}/`;
-      
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            display_name: displayName,
-          }
-        }
-      });
+      // Create user account
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-      if (error) {
-        if (error.message.includes('User already registered')) {
-          toast.error('An account with this email already exists. Please sign in instead.');
-        } else {
-          toast.error(error.message);
-        }
-        return;
-      }
+      // Update display name
+      await updateProfile(user, {
+        displayName: displayName || email.split('@')[0]
+      });
 
       // Check if user came from quiz with pending level
       const pendingLevel = localStorage.getItem('smartlearning_pending_level');
+      const pendingScore = localStorage.getItem('smartlearning_pending_score');
+
+      // Create user profile in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        userId: user.uid,
+        username: displayName || email.split('@')[0],
+        email: email,
+        englishLevel: pendingLevel || 'A1',
+        role: 'user',
+        imgProfile: '',
+        phoneNum: '',
+        createdAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+      });
+
       if (pendingLevel) {
         localStorage.removeItem('smartlearning_pending_level');
         localStorage.removeItem('smartlearning_pending_score');
@@ -163,11 +145,48 @@ export default function AuthPage() {
         navigate('/dashboard');
       } else {
         localStorage.removeItem('smartlearning_assessment');
-        toast.success('Account created successfully!');
+        toast.success('Account created successfully! Please complete the assessment.');
         navigate('/quiz');
       }
-    } catch (err) {
-      toast.error('An unexpected error occurred');
+    } catch (error: any) {
+      if (error.code === 'auth/email-already-in-use') {
+        toast.error('An account with this email already exists. Please sign in instead.');
+      } else {
+        toast.error(error.message);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // Check if user document exists
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        // Create new user profile
+        await setDoc(doc(db, 'users', user.uid), {
+          userId: user.uid,
+          username: user.displayName || user.email?.split('@')[0] || 'User',
+          email: user.email,
+          englishLevel: 'A1',
+          role: 'user',
+          imgProfile: user.photoURL || '',
+          phoneNum: '',
+          createdAt: new Date().toISOString(),
+          lastActive: new Date().toISOString(),
+        });
+      }
+
+      toast.success('Signed in with Google successfully!');
+    } catch (error: any) {
+      toast.error(error.message);
     } finally {
       setIsLoading(false);
     }
