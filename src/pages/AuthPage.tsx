@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion'; 
 import { 
-  createUserWithEmailAndPassword,
+  createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
-  updateProfile,
+  signInWithPopup,
   GoogleAuthProvider,
-  signInWithPopup
+  updateProfile,
+  onAuthStateChanged
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,11 +16,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Sparkles, Mail, Lock, User } from 'lucide-react';
+import { Sparkles, Mail, Lock, User, Award } from 'lucide-react';
 import { z } from 'zod';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
+
+interface PendingQuizData {
+  level: string;
+  score: number;
+  totalQuestions: number;
+  timeTaken?: number;
+  answers?: any[];
+}
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -28,10 +36,28 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [pendingQuizData, setPendingQuizData] = useState<PendingQuizData | null>(null);
 
   useEffect(() => {
+    // Check for pending quiz data
+    const pendingLevel = localStorage.getItem('smartlearning_pending_level');
+    const pendingScore = localStorage.getItem('smartlearning_pending_score');
+    const pendingTotal = localStorage.getItem('smartlearning_pending_total');
+    const pendingTime = localStorage.getItem('smartlearning_pending_time');
+    const pendingAnswers = localStorage.getItem('smartlearning_pending_answers');
+
+    if (pendingLevel && pendingScore) {
+      setPendingQuizData({
+        level: pendingLevel,
+        score: parseInt(pendingScore),
+        totalQuestions: pendingTotal ? parseInt(pendingTotal) : 30,
+        timeTaken: pendingTime ? parseInt(pendingTime) : undefined,
+        answers: pendingAnswers ? JSON.parse(pendingAnswers) : undefined
+      });
+    }
+
     // Check if user is already logged in
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         await checkUserRoleAndRedirect(user.uid);
       }
@@ -40,33 +66,110 @@ export default function AuthPage() {
     return () => unsubscribe();
   }, [navigate]);
 
+  const saveQuizResultsToFirestore = async (
+    userId: string, 
+    quizData: PendingQuizData
+  ) => {
+    try {
+      const percentage = (quizData.score / quizData.totalQuestions) * 100;
+
+      // Save quiz result to quizResults collection
+      await addDoc(collection(db, 'quizResults'), {
+        userId,
+        quizType: 'level_assessment',
+        score: quizData.score,
+        totalQuestions: quizData.totalQuestions,
+        percentage: Math.round(percentage * 100) / 100,
+        determinedLevel: quizData.level,
+        answers: quizData.answers || [],
+        timeTaken: quizData.timeTaken || 0,
+        completedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      });
+
+      // Update user profile with assessment data
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, {
+        level: quizData.level,
+        assessmentCompleted: true,
+        assessmentScore: quizData.score,
+        assessmentDate: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      console.log('Quiz results saved successfully to Firestore');
+      toast.success('Your quiz results have been saved!');
+    } catch (error) {
+      console.error('Error saving quiz results:', error);
+      toast.error('Failed to save quiz results. Please try again.');
+      throw error;
+    }
+  };
+
+  const createUserProfile = async (
+    userId: string, 
+    email: string, 
+    displayName: string,
+    role: string = 'user'
+  ) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, {
+        userId,
+        email,
+        displayName,
+        role,
+        level: 'A1',
+        assessmentCompleted: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      console.log('User profile created successfully');
+    } catch (error) {
+      console.error('Error creating user profile:', error);
+      throw error;
+    }
+  };
+
     const checkUserRoleAndRedirect = async (userId: string) => {
     try {
-      const userDoc = await getDoc(doc(db, 'users', userId));
-      
-      // Check if there's a pending level from quiz completion
+      // Check if there's pending quiz data to save
       const pendingLevel = localStorage.getItem('smartlearning_pending_level');
-      if (pendingLevel) {
+      const pendingScore = localStorage.getItem('smartlearning_pending_score');
+
+      if (pendingLevel && pendingScore && pendingQuizData) {
+        // Save quiz results
+        await saveQuizResultsToFirestore(userId, pendingQuizData);
+
+        // Clear pending data
         localStorage.removeItem('smartlearning_pending_level');
         localStorage.removeItem('smartlearning_pending_score');
+        localStorage.removeItem('smartlearning_pending_total');
+        localStorage.removeItem('smartlearning_pending_time');
+        localStorage.removeItem('smartlearning_pending_answers');
         localStorage.setItem('smartlearning_assessment', 'completed');
-        
-        if (userDoc.exists() && userDoc.data().role === 'admin') {
+      }
+
+      // Get user role from Firestore
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        if (userData.role === 'admin') {
           navigate('/admin');
         } else {
-          navigate('/dashboard');
+          const hasCompletedAssessment = 
+            localStorage.getItem('smartlearning_assessment') === 'completed' ||
+            userData.assessmentCompleted;
+          navigate(hasCompletedAssessment ? '/dashboard' : '/quiz');
         }
-        return;
-      }
-      
-      if (userDoc.exists() && userDoc.data().role === 'admin') {
-        navigate('/admin');
       } else {
-        const hasCompletedAssessment = localStorage.getItem('smartlearning_assessment') === 'completed';
-        navigate(hasCompletedAssessment ? '/dashboard' : '/quiz');
+        // User document doesn't exist, go to quiz
+        navigate('/quiz');
       }
-    } catch (err) {
-      console.error('Error:', err);
+    } catch (error) {
+      console.error('Error checking user role:', error);
       const hasCompletedAssessment = localStorage.getItem('smartlearning_assessment') === 'completed';
       navigate(hasCompletedAssessment ? '/dashboard' : '/quiz');
     }
@@ -92,13 +195,15 @@ export default function AuthPage() {
     
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       toast.success('Signed in successfully!');
+      await checkUserRoleAndRedirect(userCredential.user.uid);
     } catch (error: any) {
-      if (error.code === 'auth/invalid-credential') {
+      console.error('Sign in error:', error);
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
         toast.error('Invalid email or password');
       } else {
-        toast.error(error.message);
+        toast.error(error.message || 'An error occurred during sign in');
       }
     } finally {
       setIsLoading(false);
@@ -110,6 +215,11 @@ export default function AuthPage() {
     
     if (!validateInputs()) return;
     
+    if (!displayName.trim()) {
+      toast.error('Please enter your name');
+      return;
+    }
+    
     setIsLoading(true);
     try {
       // Create user account
@@ -117,43 +227,36 @@ export default function AuthPage() {
       const user = userCredential.user;
 
       // Update display name
-      await updateProfile(user, {
-        displayName: displayName || email.split('@')[0]
-      });
-
-      // Check if user came from quiz with pending level
-      const pendingLevel = localStorage.getItem('smartlearning_pending_level');
-      const pendingScore = localStorage.getItem('smartlearning_pending_score');
+      await updateProfile(user, { displayName });
 
       // Create user profile in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        userId: user.uid,
-        username: displayName || email.split('@')[0],
-        email: email,
-        englishLevel: pendingLevel || 'A1',
-        role: 'user',
-        imgProfile: '',
-        phoneNum: '',
-        createdAt: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-      });
+      await createUserProfile(user.uid, email, displayName);
 
-      if (pendingLevel) {
+      // Save quiz results if pending
+      if (pendingQuizData) {
+        await saveQuizResultsToFirestore(user.uid, pendingQuizData);
+
+        // Clear pending data
         localStorage.removeItem('smartlearning_pending_level');
         localStorage.removeItem('smartlearning_pending_score');
+        localStorage.removeItem('smartlearning_pending_total');
+        localStorage.removeItem('smartlearning_pending_time');
+        localStorage.removeItem('smartlearning_pending_answers');
         localStorage.setItem('smartlearning_assessment', 'completed');
-        toast.success('Account created successfully!');
+        
+        toast.success('Account created! Your quiz results have been saved.');
         navigate('/dashboard');
       } else {
         localStorage.removeItem('smartlearning_assessment');
-        toast.success('Account created successfully! Please complete the assessment.');
+        toast.success('Account created! Please complete the assessment to get started.');
         navigate('/quiz');
       }
     } catch (error: any) {
+      console.error('Sign up error:', error);
       if (error.code === 'auth/email-already-in-use') {
         toast.error('An account with this email already exists. Please sign in instead.');
       } else {
-        toast.error(error.message);
+        toast.error(error.message || 'An error occurred during sign up');
       }
     } finally {
       setIsLoading(false);
@@ -164,30 +267,37 @@ export default function AuthPage() {
     setIsLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
 
-      // Check if user document exists
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      
+      // Check if user profile exists, create if not
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
+
       if (!userDoc.exists()) {
-        // Create new user profile
-        await setDoc(doc(db, 'users', user.uid), {
-          userId: user.uid,
-          username: user.displayName || user.email?.split('@')[0] || 'User',
-          email: user.email,
-          englishLevel: 'A1',
-          role: 'user',
-          imgProfile: user.photoURL || '',
-          phoneNum: '',
-          createdAt: new Date().toISOString(),
-          lastActive: new Date().toISOString(),
-        });
+        await createUserProfile(
+          user.uid, 
+          user.email || '', 
+          user.displayName || 'User'
+        );
+      }
+
+      // Save quiz results if pending
+      if (pendingQuizData) {
+        await saveQuizResultsToFirestore(user.uid, pendingQuizData);
+        localStorage.removeItem('smartlearning_pending_level');
+        localStorage.removeItem('smartlearning_pending_score');
+        localStorage.removeItem('smartlearning_pending_total');
+        localStorage.removeItem('smartlearning_pending_time');
+        localStorage.removeItem('smartlearning_pending_answers');
+        localStorage.setItem('smartlearning_assessment', 'completed');
       }
 
       toast.success('Signed in with Google successfully!');
+      await checkUserRoleAndRedirect(user.uid);
     } catch (error: any) {
-      toast.error(error.message);
+      console.error('Google sign in error:', error);
+      toast.error(error.message || 'Failed to sign in with Google');
     } finally {
       setIsLoading(false);
     }
@@ -210,7 +320,16 @@ export default function AuthPage() {
         <Card className="bg-card border-border">
           <CardHeader className="text-center">
             <CardTitle className="text-foreground">Welcome</CardTitle>
-            <CardDescription>Sign in to continue your learning journey</CardDescription>
+            <CardDescription className="text-gray-400">
+            {pendingQuizData ? (
+              <div className="flex items-center justify-center gap-2 text-cyan-400">
+                <Award className="w-4 h-4" />
+                <span>Quiz completed! Level: {pendingQuizData.level} ({pendingQuizData.score}/{pendingQuizData.totalQuestions})</span>
+              </div>
+            ) : (
+              'Sign in to your account or create a new one'
+            )}
+          </CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="signin" className="w-full">

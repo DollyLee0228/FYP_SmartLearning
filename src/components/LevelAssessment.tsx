@@ -22,53 +22,35 @@ export function LevelAssessment() {
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
 
   const handleAnswerSelect = (answerIndex: number) => {
-    // Allow changing answer ONLY if result is not shown yet
     if (showResult) return;
-    
-    // Just set the selected answer, don't show result yet
     setSelectedAnswer(answerIndex);
   };
 
   const handleSubmitAnswer = () => {
     if (selectedAnswer === null) return;
     
-    // Check if answer is correct
     const isCorrect = selectedAnswer === currentQuestion.correctAnswer;
     
-    // Update score immediately
     if (isCorrect) {
       setScore(prevScore => prevScore + 1);
     }
     
-    // Store the answer
     setUserAnswers(prev => [...prev, {
       questionIndex: currentQuestionIndex,
       answer: selectedAnswer,
       isCorrect: isCorrect
     }]);
     
-    // Show the result
     setShowResult(true);
-    
-    // Debug log
-    console.log('Question:', currentQuestionIndex + 1);
-    console.log('Selected:', selectedAnswer);
-    console.log('Correct:', currentQuestion.correctAnswer);
-    console.log('Is Correct:', isCorrect);
-    console.log('Current Score:', isCorrect ? score + 1 : score);
   };
 
   const handleNext = () => {
     if (currentQuestionIndex < questions.length - 1) {
-      // Move to next question and RESET states
       setCurrentQuestionIndex(prev => prev + 1);
       setSelectedAnswer(null);
       setShowResult(false);
     } else {
-      // Complete the quiz
       setIsComplete(true);
-      console.log('Final Score:', score);
-      console.log('User Answers:', userAnswers);
     }
   };
 
@@ -106,11 +88,22 @@ export function LevelAssessment() {
     return 'Advanced';
   };
 
+  // Helper function to get level badge colors
+  const getLevelBadgeStyle = (color: string) => {
+    const colorMap: Record<string, { bg: string; text: string }> = {
+      'beginner': { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981' },
+      'intermediate': { bg: 'rgba(14, 165, 233, 0.15)', text: '#0ea5e9' },
+      'advanced': { bg: 'rgba(168, 85, 247, 0.15)', text: '#a855f7' },
+    };
+    return colorMap[color] || colorMap['beginner'];
+  };
+
   const optionLetters = ['A', 'B', 'C', 'D'];
 
   if (isComplete) {
     const level = calculateLevel();
     const levelInfo = LEVELS[level];
+    const badgeStyle = getLevelBadgeStyle(levelInfo.color);
 
     return (
       <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center p-4">
@@ -140,8 +133,15 @@ export function LevelAssessment() {
             </div>
 
             <div className="py-6 space-y-4">
+              {/* Level Badge with Inline Styles */}
               <div className="inline-block">
-                <div className={`level-badge-${levelInfo.color} text-lg px-6 py-3`}>
+                <div 
+                  className="inline-flex items-center gap-1.5 px-6 py-3 rounded-full text-lg font-semibold uppercase tracking-wide"
+                  style={{
+                    backgroundColor: badgeStyle.bg,
+                    color: badgeStyle.text
+                  }}
+                >
                   {levelInfo.level} - {levelInfo.name}
                 </div>
               </div>
