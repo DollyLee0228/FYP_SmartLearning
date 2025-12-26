@@ -116,7 +116,7 @@ export default function LandingPage() {
               Sign In
             </Button>
             <Button 
-              onClick={() => navigate('/auth')}
+              onClick={() => navigate('/quiz')}
               className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white border-0"
             >
               Start Learning
