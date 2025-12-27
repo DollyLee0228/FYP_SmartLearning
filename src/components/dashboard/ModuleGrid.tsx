@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { learningModules } from '@/data/modules';
 import { useNavigate } from 'react-router-dom';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/hooks/useAuth';
 import {
   BookOpen,
   Library,
@@ -12,6 +14,7 @@ import {
   PenTool,
   Mic,
   Play,
+  Loader2,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -24,16 +27,98 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 const colorMap: Record<string, string> = {
-  primary: 'var(--gradient-primary)',
-  accent: 'var(--gradient-accent)',
-  info: 'linear-gradient(135deg, hsl(var(--info)) 0%, hsl(199 89% 38%) 100%)',
-  warning: 'var(--gradient-streak)',
-  success: 'linear-gradient(135deg, hsl(var(--success)) 0%, hsl(142 71% 35%) 100%)',
-  streak: 'var(--gradient-streak)',
+  cyan: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',      // cyan → blue
+  purple: 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)',    // purple → pink
+  blue: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',      // blue
+  green: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',     // green
+  orange: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',    // orange
+  red: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',       // red
 };
+
+interface ModuleData {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  color: string;
+  totalLessons: number;
+  completedLessons: number;
+  order: number;
+}
 
 export function ModuleGrid() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  
+  const [modules, setModules] = useState<ModuleData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchModulesAndProgress() {
+      try {
+        setLoading(true);
+        console.log('🔍 Fetching modules from Firebase...');
+
+        // 1️⃣ 获取所有modules
+        const modulesSnapshot = await getDocs(collection(db, 'modules'));
+        const modulesData = modulesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        console.log('✅ Modules loaded:', modulesData);
+
+        // 2️⃣ 获取用户进度
+        let userModuleProgress: Record<string, any> = {};
+        
+        if (user) {
+          console.log('👤 Fetching user progress for:', user.uid);
+          
+          const userProgressRef = doc(db, 'userProgress', user.uid);
+          const userProgressSnap = await getDoc(userProgressRef);
+          
+          if (userProgressSnap.exists()) {
+            const progressData = userProgressSnap.data();
+            userModuleProgress = progressData.moduleProgress || {};
+            console.log('✅ User module progress:', userModuleProgress);
+          } else {
+            console.log('⚠️ No user progress found');
+          }
+        } else {
+          console.log('📭 User not logged in');
+        }
+
+        // 3️⃣ 合并modules数据和进度数据
+        const modulesWithProgress: ModuleData[] = modulesData.map((module: any) => {
+          const progressData = userModuleProgress[module.id] || {};
+          
+          return {
+            id: module.id,
+            title: module.title || 'Untitled Module',
+            description: module.description || '',
+            icon: module.icon || 'BookOpen',
+            color: module.color || 'primary',
+            totalLessons: progressData.totalLessons || module.totalLessons || 0,
+            completedLessons: progressData.completedLessons || 0,
+            order: module.order || 0,
+          };
+        });
+
+        // 按order排序
+        modulesWithProgress.sort((a, b) => a.order - b.order);
+
+        setModules(modulesWithProgress);
+        console.log('✅ Final modules with progress:', modulesWithProgress);
+
+      } catch (error) {
+        console.error('❌ Error fetching modules:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchModulesAndProgress();
+  }, [user]); // 依赖user，当登录/登出时重新加载
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -50,6 +135,24 @@ export function ModuleGrid() {
     visible: { opacity: 1, y: 0 },
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Empty state
+  if (modules.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">No modules available yet.</p>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       variants={containerVariants}
@@ -62,15 +165,18 @@ export function ModuleGrid() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {learningModules.map((module) => {
+        {modules.map((module) => {
           const Icon = iconMap[module.icon] || BookOpen;
-          const progress = Math.round((module.completed / module.lessons) * 100);
+          const progress = module.totalLessons > 0 
+            ? Math.round((module.completedLessons / module.totalLessons) * 100)
+            : 0;
           const gradient = colorMap[module.color] || colorMap.primary;
 
           return (
             <motion.div key={module.id} variants={itemVariants}>
               <Card
-                className="module-card group relative overflow-hidden"
+                // className="module-card group relative overflow-hidden"
+                className="module-card group relative overflow-hidden cursor-pointer"
                 onClick={() => navigate(`/modules/${module.id}`)}
               >
                 {/* Background decoration */}
@@ -96,14 +202,16 @@ export function ModuleGrid() {
                   {/* Content */}
                   <div>
                     <h3 className="font-semibold text-lg">{module.title}</h3>
-                    <p className="text-sm text-muted-foreground line-clamp-2">{module.description}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-2">
+                      {module.description}
+                    </p>
                   </div>
 
                   {/* Progress */}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">
-                        {module.completed} of {module.lessons} lessons
+                        {module.completedLessons} of {module.totalLessons} lessons
                       </span>
                       <span className="font-medium">{progress}%</span>
                     </div>
@@ -115,6 +223,18 @@ export function ModuleGrid() {
           );
         })}
       </div>
+
+      {/* Debug Info - 可以删除
+      {process.env.NODE_ENV === 'development' && (
+        <details className="mt-8 p-4 bg-gray-900 rounded text-xs">
+          <summary className="cursor-pointer text-gray-500 mb-2">
+            🐛 Debug: Module Progress
+          </summary>
+          <pre className="text-gray-400 overflow-auto">
+            {JSON.stringify(modules, null, 2)}
+          </pre>
+        </details>
+      )} */}
     </motion.div>
   );
 }
