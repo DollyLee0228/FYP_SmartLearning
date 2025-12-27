@@ -13,6 +13,7 @@ import { useLearning } from '@/context/LearningContext';
 import { LEVELS } from '@/types/learning';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { getUserProgress } from '@/utils/progressTracking';
 
 export default function Dashboard() {
   const { userProgress } = useLearning();
