@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Library, Play, Lock, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -18,6 +18,41 @@ export default function VocabularyModule() {
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ✅ 实时监听user progress
+  useEffect(() => {
+    if (!user) {
+      setCompletedLessons([]);
+      return;
+    }
+
+    console.log('👂 Setting up real-time listener for user progress...');
+    
+    const userProgressRef = doc(db, 'userProgress', user.uid);
+    const unsubscribe = onSnapshot(
+      userProgressRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const progressData = snapshot.data();
+          const completed = progressData.completedLessons || [];
+          console.log('🔄 Progress updated! Completed lessons:', completed);
+          setCompletedLessons(completed);
+        } else {
+          console.log('📭 No progress data yet');
+          setCompletedLessons([]);
+        }
+      },
+      (error) => {
+        console.error('❌ Error listening to progress:', error);
+      }
+    );
+
+    return () => {
+      console.log('🔇 Unsubscribing from progress listener');
+      unsubscribe();
+    };
+  }, [user]);
+
+  // ✅ 加载module和lessons
   useEffect(() => {
     async function fetchData() {
       try {
@@ -37,7 +72,7 @@ export default function VocabularyModule() {
           toast.error('Vocabulary module not found');
         }
 
-        // 2. Fetch lessons for vocabulary module
+        // 2. Fetch lessons
         const lessonsQuery = query(
           collection(db, 'lessons'),
           where('moduleId', '==', 'vocabulary'),
@@ -53,25 +88,16 @@ export default function VocabularyModule() {
         setLessons(lessonsData);
         console.log('✅ Lessons loaded:', lessonsData.length, 'lessons');
 
-        // 3. 获取用户完成状态
+        // 3. Fetch initial progress
         if (user) {
-          console.log('👤 Fetching user progress for:', user.uid);
-          
           const userProgressRef = doc(db, 'userProgress', user.uid);
           const userProgressSnap = await getDoc(userProgressRef);
           
           if (userProgressSnap.exists()) {
             const progressData = userProgressSnap.data();
-            const completed = progressData.completedLessons || [];
-            setCompletedLessons(completed);
-            console.log('✅ Completed lessons:', completed);
-          } else {
-            console.log('⚠️ No user progress found');
-            setCompletedLessons([]);
+            setCompletedLessons(progressData.completedLessons || []);
+            console.log('✅ Initial completed lessons:', progressData.completedLessons);
           }
-        } else {
-          console.log('📭 User not logged in');
-          setCompletedLessons([]);
         }
 
       } catch (error: any) {
@@ -84,6 +110,43 @@ export default function VocabularyModule() {
 
     fetchData();
   }, [user]);
+
+  // ✅ 计算每个lesson是否解锁 (Sequential unlock logic)
+  const getLessonStatus = (lesson: any, index: number) => {
+    const isCompleted = completedLessons.includes(lesson.id);
+    
+    // 第一个lesson永远解锁
+    if (index === 0) {
+      return {
+        isCompleted,
+        isLocked: false,
+        canStart: lesson.hasContent,
+        lockReason: null
+      };
+    }
+    
+    // 检查上一个lesson是否完成
+    const previousLesson = lessons[index - 1];
+    const isPreviousCompleted = completedLessons.includes(previousLesson.id);
+    
+    // 如果上一个lesson没完成，这个lesson就锁住
+    if (!isPreviousCompleted) {
+      return {
+        isCompleted,
+        isLocked: true,
+        canStart: false,
+        lockReason: `Complete "${previousLesson.title}" first`
+      };
+    }
+    
+    // 上一个完成了，这个解锁
+    return {
+      isCompleted,
+      isLocked: false,
+      canStart: lesson.hasContent,
+      lockReason: null
+    };
+  };
 
   // Loading state
   if (loading) {
@@ -158,12 +221,12 @@ export default function VocabularyModule() {
         {lessons.length === 0 ? (
           <div className="bg-[#111827] rounded-xl border border-white/10 p-8 text-center">
             <p className="text-gray-400">No lessons available yet.</p>
-            <p className="text-sm text-gray-500 mt-2">Check back soon!</p>
           </div>
         ) : (
           <div className="space-y-3">
             {lessons.map((lesson, index) => {
-              const isCompleted = completedLessons.includes(lesson.id);
+              const status = getLessonStatus(lesson, index);
+              const { isCompleted, isLocked, canStart, lockReason } = status;
               
               return (
                 <motion.div
@@ -172,45 +235,47 @@ export default function VocabularyModule() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
                   onClick={() => {
-                    if (!lesson.isLocked && lesson.hasContent) {
-                      navigate(`/lesson/vocabulary/${lesson.id}`);
-                    } else if (lesson.isLocked) {
-                      toast.info('Complete previous lessons to unlock this one');
-                    } else {
+                    if (isLocked) {
+                      toast.info(lockReason || 'Complete previous lessons to unlock');
+                    } else if (!canStart) {
                       toast.info('This lesson content is coming soon!');
+                    } else {
+                      navigate(`/lesson/vocabulary/${lesson.id}`);
                     }
                   }}
                   className={`bg-[#111827] rounded-xl border border-white/10 p-4 flex items-center gap-4 transition-all ${
-                    lesson.isLocked 
+                    isLocked 
                       ? 'opacity-50 cursor-not-allowed' 
-                      : lesson.hasContent
+                      : canStart
                       ? 'hover:border-white/20 hover:shadow-lg cursor-pointer'
                       : 'cursor-default'
                   }`}
                 >
-                  {/* Lesson Number/Status Icon */}
+                  {/* Icon */}
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                     isCompleted
                       ? 'bg-emerald-500/20 text-emerald-400'
-                      : lesson.isLocked
-                      ? 'bg-white/5 text-gray-500'
+                      : isLocked
+                      ? 'bg-white/5 text-gray-600'
                       : 'bg-purple-500/20 text-purple-400'
                   }`}>
                     {isCompleted ? (
                       <CheckCircle2 className="w-5 h-5" />
-                    ) : lesson.isLocked ? (
+                    ) : isLocked ? (
                       <Lock className="w-4 h-4" />
                     ) : (
                       <span className="text-sm font-semibold">{lesson.order}</span>
                     )}
                   </div>
 
-                  {/* Lesson Info */}
+                  {/* Info */}
                   <div className="flex-1">
-                    <h3 className="font-medium text-white">{lesson.title}</h3>
+                    <h3 className={`font-medium ${isLocked ? 'text-gray-500' : 'text-white'}`}>
+                      {lesson.title}
+                    </h3>
                     <div className="flex items-center gap-3 mt-1">
                       <p className="text-sm text-gray-500">{lesson.duration}</p>
-                      {lesson.difficulty && (
+                      {lesson.difficulty && !isLocked && (
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           lesson.difficulty === 'beginner' ? 'bg-green-500/20 text-green-400' :
                           lesson.difficulty === 'intermediate' ? 'bg-yellow-500/20 text-yellow-400' :
@@ -219,17 +284,22 @@ export default function VocabularyModule() {
                           {lesson.difficulty}
                         </span>
                       )}
-                      {lesson.requiredLevel && (
+                      {lesson.requiredLevel && !isLocked && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400">
                           {lesson.requiredLevel}
+                        </span>
+                      )}
+                      {isLocked && lockReason && (
+                        <span className="text-xs text-gray-600 italic">
+                          🔒 {lockReason}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Action Button */}
+                  {/* Button */}
                   <div>
-                    {!lesson.isLocked && !isCompleted && lesson.hasContent && (
+                    {!isLocked && !isCompleted && canStart && (
                       <Button
                         size="sm"
                         className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
@@ -243,11 +313,11 @@ export default function VocabularyModule() {
                       </Button>
                     )}
                     
-                    {!lesson.isLocked && !isCompleted && !lesson.hasContent && (
+                    {!isLocked && !isCompleted && !canStart && (
                       <span className="text-xs text-gray-500 px-3">Coming soon</span>
                     )}
                     
-                    {isCompleted && lesson.hasContent && (
+                    {isCompleted && canStart && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -262,15 +332,18 @@ export default function VocabularyModule() {
                       </Button>
                     )}
                     
-                    {isCompleted && !lesson.hasContent && (
+                    {isCompleted && !canStart && (
                       <span className="text-xs text-emerald-400 px-3">
                         <CheckCircle2 className="w-3 h-3 inline mr-1" />
                         Completed
                       </span>
                     )}
                     
-                    {lesson.isLocked && (
-                      <span className="text-xs text-gray-600 px-3">Locked</span>
+                    {isLocked && (
+                      <span className="text-xs text-gray-600 px-3 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        Locked
+                      </span>
                     )}
                   </div>
                 </motion.div>
@@ -278,22 +351,6 @@ export default function VocabularyModule() {
             })}
           </div>
         )}
-
-        {/* Debug Info */}
-        <details className="mt-8 p-4 bg-gray-900 rounded text-xs">
-          <summary className="cursor-pointer text-gray-500 mb-2">
-            🐛 Debug Info (Remove this in production)
-          </summary>
-          <div className="space-y-2 text-gray-400">
-            <p>Module ID: {module?.id}</p>
-            <p>Module Title: {module?.title}</p>
-            <p>Lessons Count: {lessons.length}</p>
-            <p>Completed: {completedCount}</p>
-            <p>Progress: {progress}%</p>
-            <p>User ID: {user?.uid || 'Not logged in'}</p>
-            <p>Completed Lessons: {JSON.stringify(completedLessons)}</p>
-          </div>
-        </details>
       </div>
     </div>
   );

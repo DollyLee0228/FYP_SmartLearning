@@ -1,0 +1,122 @@
+{
+  "reading-1": {
+    "id": "reading-1",
+    "moduleId": "reading",
+    "order": 1,
+    "title": "Finding the Main Idea",
+    "duration": "25 min",
+    "difficulty": "beginner",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Learn to identify the central point in a text",
+    "xpRewards": 75
+  },
+  "reading-2": {
+    "id": "reading-2",
+    "moduleId": "reading",
+    "order": 2,
+    "title": "Making Inferences",
+    "duration": "25 min",
+    "difficulty": "beginner",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Read between the lines and understand implied meanings",
+    "xpRewards": 75
+  },
+  "reading-3": {
+    "id": "reading-3",
+    "moduleId": "reading",
+    "order": 3,
+    "title": "Understanding Context Clues",
+    "duration": "25 min",
+    "difficulty": "beginner",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Guess word meanings from surrounding context",
+    "xpRewards": 75
+  },
+  "reading-4": {
+    "id": "reading-4",
+    "moduleId": "reading",
+    "order": 4,
+    "title": "Identifying Supporting Details",
+    "duration": "25 min",
+    "difficulty": "intermediate",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Find evidence that supports the main idea",
+    "xpRewards": 75
+  },
+  "reading-5": {
+    "id": "reading-5",
+    "moduleId": "reading",
+    "order": 5,
+    "title": "Recognizing Text Structure",
+    "duration": "30 min",
+    "difficulty": "intermediate",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Understand how texts are organized and why",
+    "xpRewards": 100
+  },
+  "reading-6": {
+    "id": "reading-6",
+    "moduleId": "reading",
+    "order": 6,
+    "title": "Making Predictions",
+    "duration": "25 min",
+    "difficulty": "intermediate",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Predict what will happen next in a text",
+    "xpRewards": 75
+  },
+  "reading-7": {
+    "id": "reading-7",
+    "moduleId": "reading",
+    "order": 7,
+    "title": "Summarizing",
+    "duration": "30 min",
+    "difficulty": "intermediate",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Condense long texts into brief summaries",
+    "xpRewards": 100
+  },
+  "reading-8": {
+    "id": "reading-8",
+    "moduleId": "reading",
+    "order": 8,
+    "title": "Comparing and Contrasting",
+    "duration": "30 min",
+    "difficulty": "advanced",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Identify similarities and differences in texts",
+    "xpRewards": 100
+  },
+  "reading-9": {
+    "id": "reading-9",
+    "moduleId": "reading",
+    "order": 9,
+    "title": "Author's Purpose",
+    "duration": "30 min",
+    "difficulty": "advanced",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Understand why the author wrote the text",
+    "xpRewards": 100
+  },
+  "reading-10": {
+    "id": "reading-10",
+    "moduleId": "reading",
+    "order": 10,
+    "title": "Drawing Conclusions",
+    "duration": "30 min",
+    "difficulty": "advanced",
+    "type": "Reading Strategy",
+    "hasContent": true,
+    "description": "Form logical conclusions based on text evidence",
+    "xpRewards": 100
+  }
+}
