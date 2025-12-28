@@ -1,0 +1,122 @@
+{
+  "vocabulary-1": {
+    "id": "vocabulary-1",
+    "moduleId": "vocabulary",
+    "order": 1,
+    "title": "Common English Words - Part 1",
+    "duration": "20 min",
+    "difficulty": "beginner",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Learn 10 essential English words with typing exercises",
+    "xpRewards": 50
+  },
+  "vocabulary-2": {
+    "id": "vocabulary-2",
+    "moduleId": "vocabulary",
+    "order": 2,
+    "title": "Common English Words - Part 2",
+    "duration": "20 min",
+    "difficulty": "beginner",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Expand your vocabulary with 10 more essential words",
+    "xpRewards": 50
+  },
+  "vocabulary-3": {
+    "id": "vocabulary-3",
+    "moduleId": "vocabulary",
+    "order": 3,
+    "title": "Emotions and Feelings",
+    "duration": "20 min",
+    "difficulty": "beginner",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Express your emotions with the right vocabulary",
+    "xpRewards": 50
+  },
+  "vocabulary-4": {
+    "id": "vocabulary-4",
+    "moduleId": "vocabulary",
+    "order": 4,
+    "title": "Daily Routines",
+    "duration": "20 min",
+    "difficulty": "beginner",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Describe your daily activities in English",
+    "xpRewards": 50
+  },
+  "vocabulary-5": {
+    "id": "vocabulary-5",
+    "moduleId": "vocabulary",
+    "order": 5,
+    "title": "Food and Cooking",
+    "duration": "20 min",
+    "difficulty": "intermediate",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Learn food-related vocabulary and cooking terms",
+    "xpRewards": 75
+  },
+  "vocabulary-6": {
+    "id": "vocabulary-6",
+    "moduleId": "vocabulary",
+    "order": 6,
+    "title": "Travel and Transportation",
+    "duration": "20 min",
+    "difficulty": "intermediate",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Navigate your way with travel vocabulary",
+    "xpRewards": 75
+  },
+  "vocabulary-7": {
+    "id": "vocabulary-7",
+    "moduleId": "vocabulary",
+    "order": 7,
+    "title": "Work and Business",
+    "duration": "20 min",
+    "difficulty": "intermediate",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Professional vocabulary for the workplace",
+    "xpRewards": 75
+  },
+  "vocabulary-8": {
+    "id": "vocabulary-8",
+    "moduleId": "vocabulary",
+    "order": 8,
+    "title": "Technology and Internet",
+    "duration": "20 min",
+    "difficulty": "intermediate",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Master modern tech vocabulary",
+    "xpRewards": 75
+  },
+  "vocabulary-9": {
+    "id": "vocabulary-9",
+    "moduleId": "vocabulary",
+    "order": 9,
+    "title": "Academic English",
+    "duration": "25 min",
+    "difficulty": "advanced",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Advanced vocabulary for academic writing and speaking",
+    "xpRewards": 100
+  },
+  "vocabulary-10": {
+    "id": "vocabulary-10",
+    "moduleId": "vocabulary",
+    "order": 10,
+    "title": "Idioms and Expressions",
+    "duration": "25 min",
+    "difficulty": "advanced",
+    "type": "Vocabulary",
+    "hasContent": true,
+    "description": "Common English idioms and their meanings",
+    "xpRewards": 100
+  }
+}

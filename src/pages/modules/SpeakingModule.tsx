@@ -1,22 +1,182 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mic, Play, Lock, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Mic, Play, Lock, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-
-const exercises = [
-  { id: 'speaking-1', title: 'Basic Pronunciation', description: '基础问候语发音练习', duration: '5 题', completed: false, hasContent: true },
-  { id: 'speaking-2', title: 'Vowel Sounds', description: '元音发音练习', duration: '5 题', completed: false, hasContent: true },
-  { id: 'speaking-3', title: 'Consonant Sounds', description: '辅音发音练习', duration: '5 题', completed: false },
-  { id: 'speaking-4', title: 'Word Stress', description: '单词重音练习', duration: '5 题', completed: false, locked: true },
-  { id: 'speaking-5', title: 'Sentence Intonation', description: '句子语调练习', duration: '5 题', completed: false, locked: true },
-];
+import { collection, query, where, orderBy, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 export default function SpeakingModule() {
   const navigate = useNavigate();
-  const completedCount = exercises.filter(e => e.completed).length;
-  const progress = Math.round((completedCount / exercises.length) * 100);
+  const { user } = useAuth();
+  
+  const [module, setModule] = useState<any>(null);
+  const [lessons, setLessons] = useState<any[]>([]);
+  const [completedLessons, setCompletedLessons] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // ✅ Real-time listener for user progress
+  useEffect(() => {
+    if (!user) {
+      setCompletedLessons([]);
+      return;
+    }
+
+    console.log('🎤 Setting up real-time listener for speaking progress...');
+    
+    const userProgressRef = doc(db, 'userProgress', user.uid);
+    const unsubscribe = onSnapshot(
+      userProgressRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const progressData = snapshot.data();
+          const completed = progressData.completedLessons || [];
+          console.log('🔄 Progress updated! Completed lessons:', completed);
+          setCompletedLessons(completed);
+        } else {
+          console.log('📭 No progress data yet');
+          setCompletedLessons([]);
+        }
+      },
+      (error) => {
+        console.error('❌ Error listening to progress:', error);
+      }
+    );
+
+    return () => {
+      console.log('🔇 Unsubscribing from progress listener');
+      unsubscribe();
+    };
+  }, [user]);
+
+  // ✅ Load module and lessons
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        console.log('🔍 Fetching speaking module data from Firebase...');
+
+        // 1. Fetch module data
+        const moduleRef = doc(db, 'modules', 'speaking');
+        const moduleSnap = await getDoc(moduleRef);
+        
+        if (moduleSnap.exists()) {
+          const moduleData = { id: moduleSnap.id, ...moduleSnap.data() };
+          setModule(moduleData);
+          console.log('✅ Module loaded:', moduleData);
+        } else {
+          console.error('❌ Speaking module not found in Firebase');
+          toast.error('Speaking module not found');
+        }
+
+        // 2. Fetch lessons
+        const lessonsQuery = query(
+          collection(db, 'lessons'),
+          where('moduleId', '==', 'speaking'),
+          orderBy('order')
+        );
+        
+        const lessonsSnapshot = await getDocs(lessonsQuery);
+        const lessonsData = lessonsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setLessons(lessonsData);
+        console.log('✅ Lessons loaded:', lessonsData.length, 'lessons');
+
+        // 3. Fetch initial progress
+        if (user) {
+          const userProgressRef = doc(db, 'userProgress', user.uid);
+          const userProgressSnap = await getDoc(userProgressRef);
+          
+          if (userProgressSnap.exists()) {
+            const progressData = userProgressSnap.data();
+            setCompletedLessons(progressData.completedLessons || []);
+            console.log('✅ Initial completed lessons:', progressData.completedLessons);
+          }
+        }
+
+      } catch (error: any) {
+        console.error('❌ Error fetching data:', error);
+        toast.error('Failed to load speaking module');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [user]);
+
+  // ✅ Sequential unlock logic
+  const getLessonStatus = (lesson: any, index: number) => {
+    const isCompleted = completedLessons.includes(lesson.id);
+    
+    // First lesson always unlocked
+    if (index === 0) {
+      return {
+        isCompleted,
+        isLocked: false,
+        canStart: lesson.hasContent,
+        lockReason: null
+      };
+    }
+    
+    // Check if previous lesson completed
+    const previousLesson = lessons[index - 1];
+    const isPreviousCompleted = completedLessons.includes(previousLesson.id);
+    
+    // If previous lesson not completed, lock this one
+    if (!isPreviousCompleted) {
+      return {
+        isCompleted,
+        isLocked: true,
+        canStart: false,
+        lockReason: `Complete "${previousLesson.title}" first`
+      };
+    }
+    
+    // Previous completed, unlock this one
+    return {
+      isCompleted,
+      isLocked: false,
+      canStart: lesson.hasContent,
+      lockReason: null
+    };
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] text-white flex flex-col items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-400 mb-4" />
+        <p className="text-gray-400">Loading Speaking Module...</p>
+      </div>
+    );
+  }
+
+  // Error state
+  if (!module) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] text-white flex flex-col items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl mb-4">Module not found</h2>
+          <Button onClick={() => navigate('/dashboard')} className="bg-blue-500">
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate progress
+  const completedCount = lessons.filter(l => completedLessons.includes(l.id)).length;
+  const progress = lessons.length > 0 
+    ? Math.round((completedCount / lessons.length) * 100) 
+    : 0;
 
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-white">
@@ -32,17 +192,19 @@ export default function SpeakingModule() {
           </button>
 
           <div className="flex items-start gap-6">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-400 to-orange-500 flex items-center justify-center shrink-0">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shrink-0">
               <Mic className="w-8 h-8 text-white" />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-display font-bold mb-2">Speaking & Pronunciation</h1>
-              <p className="text-gray-400 mb-4">使用麦克风练习发音，AI实时评分</p>
+              <h1 className="text-2xl font-display font-bold mb-2">{module.title}</h1>
+              <p className="text-gray-400 mb-4">{module.description}</p>
               <div className="flex items-center gap-4">
                 <div className="flex-1 max-w-xs">
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-400">{completedCount} of {exercises.length} 练习</span>
-                    <span className="text-rose-400 font-medium">{progress}%</span>
+                    <span className="text-gray-400">
+                      {completedCount} of {lessons.length} lessons
+                    </span>
+                    <span className="text-blue-400 font-medium">{progress}%</span>
                   </div>
                   <Progress value={progress} className="h-2 bg-white/10" />
                 </div>
@@ -52,75 +214,168 @@ export default function SpeakingModule() {
         </div>
       </div>
 
-      {/* Exercises List */}
+      {/* Speaking Lessons List */}
       <div className="max-w-4xl mx-auto px-6 py-8">
-        <h2 className="text-lg font-semibold mb-6">发音练习</h2>
-        <div className="space-y-3">
-          {exercises.map((exercise, index) => (
-            <motion.div
-              key={exercise.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              onClick={() => {
-                if (!exercise.locked && exercise.hasContent) {
-                  navigate(`/modules/speaking/exercise/${exercise.id}`);
-                }
-              }}
-              className={`bg-[#111827] rounded-xl border border-white/10 p-4 flex items-center gap-4 ${
-                exercise.locked ? 'opacity-50' : 'hover:border-white/20 cursor-pointer'
-              }`}
-            >
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                exercise.completed
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : exercise.locked
-                  ? 'bg-white/5 text-gray-500'
-                  : 'bg-rose-500/20 text-rose-400'
-              }`}>
-                {exercise.completed ? (
-                  <CheckCircle2 className="w-5 h-5" />
-                ) : exercise.locked ? (
-                  <Lock className="w-4 h-4" />
-                ) : (
-                  <Mic className="w-5 h-5" />
-                )}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium text-white">{exercise.title}</h3>
-                <p className="text-sm text-gray-500">{exercise.description} • {exercise.duration}</p>
-              </div>
-              {!exercise.locked && exercise.hasContent && (
-                <Button
-                  size="sm"
-                  className="bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-600 hover:to-orange-600 text-white"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/modules/speaking/exercise/${exercise.id}`);
+        <h2 className="text-lg font-semibold mb-6">Speaking Lessons</h2>
+        
+        {lessons.length === 0 ? (
+          <div className="bg-[#111827] rounded-xl border border-white/10 p-8 text-center">
+            <p className="text-gray-400">No lessons available yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {lessons.map((lesson, index) => {
+              const status = getLessonStatus(lesson, index);
+              const { isCompleted, isLocked, canStart, lockReason } = status;
+              
+              return (
+                <motion.div
+                  key={lesson.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  onClick={() => {
+                    if (isLocked) {
+                      toast.info(lockReason || 'Complete previous lessons to unlock');
+                    } else if (!canStart) {
+                      toast.info('This lesson content is coming soon!');
+                    } else {
+                      navigate(`/lesson/speaking/${lesson.id}`);
+                    }
                   }}
+                  className={`bg-[#111827] rounded-xl border border-white/10 p-4 flex items-center gap-4 transition-all ${
+                    isLocked 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : canStart
+                      ? 'hover:border-white/20 hover:shadow-lg cursor-pointer'
+                      : 'cursor-default'
+                  }`}
                 >
-                  <Play className="w-4 h-4 mr-1" />
-                  开始
-                </Button>
-              )}
-              {!exercise.locked && !exercise.hasContent && (
-                <span className="text-xs text-gray-500">即将推出</span>
-              )}
-            </motion.div>
-          ))}
-        </div>
+                  {/* Icon */}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                    isCompleted
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : isLocked
+                      ? 'bg-white/5 text-gray-600'
+                      : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {isCompleted ? (
+                      <CheckCircle2 className="w-5 h-5" />
+                    ) : isLocked ? (
+                      <Lock className="w-4 h-4" />
+                    ) : (
+                      <span className="text-sm font-semibold">{lesson.order}</span>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1">
+                    <h3 className={`font-medium ${isLocked ? 'text-gray-500' : 'text-white'}`}>
+                      {lesson.title}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-sm text-gray-500">{lesson.type}</p>
+                      <span className="text-gray-600">•</span>
+                      <p className="text-sm text-gray-500">{lesson.duration}</p>
+                      {lesson.difficulty && !isLocked && (
+                        <>
+                          <span className="text-gray-600">•</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            lesson.difficulty === 'beginner' ? 'bg-green-500/20 text-green-400' :
+                            lesson.difficulty === 'intermediate' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}>
+                            {lesson.difficulty}
+                          </span>
+                        </>
+                      )}
+                      {isLocked && lockReason && (
+                        <>
+                          <span className="text-gray-600">•</span>
+                          <span className="text-xs text-gray-600 italic">
+                            🔒 {lockReason}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Button */}
+                  <div>
+                    {!isLocked && !isCompleted && canStart && (
+                      <Button
+                        size="sm"
+                        className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/lesson/speaking/${lesson.id}`);
+                        }}
+                      >
+                        <Play className="w-4 h-4 mr-1" />
+                        Start
+                      </Button>
+                    )}
+                    
+                    {!isLocked && !isCompleted && !canStart && (
+                      <span className="text-xs text-gray-500 px-3">Coming soon</span>
+                    )}
+                    
+                    {isCompleted && canStart && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/lesson/speaking/${lesson.id}`);
+                        }}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1" />
+                        Review
+                      </Button>
+                    )}
+                    
+                    {isCompleted && !canStart && (
+                      <span className="text-xs text-blue-400 px-3">
+                        <CheckCircle2 className="w-3 h-3 inline mr-1" />
+                        Completed
+                      </span>
+                    )}
+                    
+                    {isLocked && (
+                      <span className="text-xs text-gray-600 px-3 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        Locked
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Info Card */}
-        <div className="mt-8 bg-rose-500/10 border border-rose-500/20 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <Mic className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm text-rose-300 font-medium">需要麦克风权限</p>
-              <p className="text-sm text-gray-400 mt-1">
-                练习时会使用浏览器的语音识别功能，请确保允许麦克风权限。
-              </p>
-            </div>
-          </div>
+        <div className="mt-8 bg-white/5 rounded-xl border border-white/10 p-6">
+          <h3 className="font-semibold mb-2 text-blue-400">How it works</h3>
+          <ul className="space-y-2 text-sm text-gray-400">
+            <li className="flex items-start gap-2">
+              <span className="text-blue-400">1.</span>
+              <span>Learn speaking techniques and useful phrases</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-blue-400">2.</span>
+              <span>Study examples of good speaking in different contexts</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-blue-400">3.</span>
+              <span>Practice with exercises to reinforce what you learned</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-blue-400">4.</span>
+              <span>Complete lessons to earn XP and unlock new topics</span>
+            </li>
+          </ul>
         </div>
       </div>
     </div>

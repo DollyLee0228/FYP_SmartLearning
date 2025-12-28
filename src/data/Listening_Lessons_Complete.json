@@ -1,0 +1,68 @@
+{
+  "lessonMetadata": {
+    "id": "writing-1",
+    "moduleId": "writing",
+    "order": 1,
+    "title": "Describe Your Hometown",
+    "duration": "30 min",
+    "difficulty": "beginner",
+    "type": "Descriptive Essay",
+    "hasContent": true,
+    "description": "Write a descriptive essay about your hometown",
+    "xpRewards": 100
+  },
+  
+  "lessonContent": {
+    "lessonId": "writing-1",
+    "moduleId": "writing",
+    
+    "introduction": {
+      "title": "Describe Your Hometown",
+      "subtitle": "Descriptive Essay Writing",
+      "summary": "Learn to write vivid descriptions of places using sensory details and descriptive language."
+    },
+
+    "sections": [
+      {
+        "id": "section-1",
+        "type": "content",
+        "content": "# What is Descriptive Writing?\n\nDescriptive writing paints a picture with words. When describing a place, you want your reader to see, hear, and feel what you experience.\n\n## Key Elements\n\n**Sensory Details**: Use all five senses\n- **Sight**: colors, shapes, sizes\n- **Sound**: noises, music, voices\n- **Smell**: aromas, scents\n- **Touch**: textures, temperatures\n- **Taste**: flavors (if relevant)\n\n**Specific Adjectives**: Choose precise words\n- ❌ My hometown is nice\n- ✅ My hometown is a peaceful village surrounded by lush green rice fields\n\n## Example\n\n**Generic**: The market was busy.\n**Descriptive**: The morning market buzzed with activity. Vendors called out their prices while the sweet smell of fresh bread mixed with the earthy aroma of vegetables."
+      },
+      {
+        "id": "section-2",
+        "type": "content",
+        "content": "# How to Structure Your Essay\n\n## Introduction (1 paragraph)\n- **Hook**: Start with something interesting\n  - \"Have you ever been to a place where time seems to stand still?\"\n  - \"Nestled between two mountains lies my beloved hometown\"\n- **Location**: Where is your hometown?\n- **Thesis**: What makes it special?\n\n## Body Paragraphs (2-3 paragraphs)\n\n### Paragraph 1: Physical Description\n- Buildings and architecture\n- Natural landscape (mountains, rivers, fields)\n- Streets and layout\n\n### Paragraph 2: Atmosphere and Activities\n- What happens there?\n- People's daily routines\n- Special events or traditions\n\n### Paragraph 3: Personal Connection\n- Your favorite places\n- Special memories\n- Why it's important to you\n\n## Conclusion (1 paragraph)\n- Summarize main points\n- Final reflection on what makes it special\n- Leave reader with a lasting impression"
+      },
+      {
+        "id": "section-3",
+        "type": "content",
+        "content": "# Writing Tips for Success\n\n## 1. Show, Don't Tell\n\n**Telling**: My hometown is friendly.\n**Showing**: Neighbors greet each other with warm smiles and stop to chat on street corners. Children play freely in the park while parents watch from nearby benches.\n\n## 2. Use Descriptive Language\n\n**Instead of**: The weather is good\n**Write**: The warm sunshine bathes the streets in golden light, and a gentle breeze carries the scent of blooming flowers.\n\n## 3. Use Transition Words\n\n**To add information**:\n- Also, Moreover, Furthermore, In addition\n\n**To contrast**:\n- However, On the other hand, Nevertheless\n\n**To show location**:\n- Nearby, In the center, Across from, Next to\n\n## 4. Vary Your Sentences\n\nMix short and long sentences:\n- **Short**: The sun sets. Birds fly home.\n- **Long**: As the sun dips below the horizon, painting the sky in shades of orange and pink, tired birds return to their nests.\n\n## 5. End Strong\n\nDon't just say \"This is why I love my hometown.\"\nInstead: \"Every time I return, I'm reminded that home isn't just a place—it's a feeling of belonging that stays with you wherever you go.\""
+      }
+    ],
+
+    "writingPrompt": {
+      "prompt": "Write a descriptive essay about your hometown. Include the following:\n\n• Where is your hometown located?\n• What does it look like? (buildings, nature, streets)\n• What is the weather like?\n• What do people do there for work or fun?\n• What is your favorite place in your hometown and why?\n• What makes your hometown special to you?\n\nRemember to use sensory details, descriptive language, and organize your essay with a clear introduction, body, and conclusion.",
+      
+      "tips": [
+        "Use descriptive adjectives to paint a picture (e.g., 'bustling market' instead of 'busy market')",
+        "Include sensory details - what you see, hear, and smell",
+        "Organize your essay with an introduction, body paragraphs, and conclusion",
+        "Use transition words like 'also', 'moreover', 'however' to connect ideas",
+        "Show, don't tell - describe scenes that demonstrate your points",
+        "End with a memorable conclusion that reflects on why your hometown is special"
+      ],
+      
+      "wordLimit": {
+        "min": 150,
+        "max": 300
+      },
+      
+      "rubric": {
+        "content": "Clear, vivid description with specific sensory details (40%)",
+        "organization": "Well-structured with introduction, body, and conclusion (20%)",
+        "language": "Varied vocabulary and descriptive language (25%)",
+        "grammar": "Proper grammar, spelling, and punctuation (15%)"
+      }
+    }
+  }
+}

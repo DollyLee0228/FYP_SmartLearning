@@ -1,23 +1,182 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Play, Lock, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, FileText, Play, Lock, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-
-const exercises = [
-  { id: 'reading-1', title: 'The Little Prince - Excerpt', duration: '20 min', completed: false, type: 'Story' },
-  { id: 'reading-2', title: 'Climate Change and Its Effects', duration: '25 min', completed: false, type: 'Article' },
-  { id: 3, title: 'A Day in London', duration: '15 min', completed: false, type: 'Travel', locked: true },
-  { id: 4, title: 'The History of Coffee', duration: '20 min', completed: false, type: 'History', locked: true },
-  { id: 5, title: 'Technology in Education', duration: '25 min', completed: false, type: 'Technology', locked: true },
-  { id: 6, title: 'Health and Wellness Tips', duration: '18 min', completed: false, type: 'Health', locked: true },
-];
+import { collection, query, where, orderBy, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 export default function ReadingModule() {
   const navigate = useNavigate();
-  const completedCount = exercises.filter(l => l.completed).length;
-  const progress = Math.round((completedCount / exercises.length) * 100);
+  const { user } = useAuth();
+  
+  const [module, setModule] = useState<any>(null);
+  const [lessons, setLessons] = useState<any[]>([]);
+  const [completedLessons, setCompletedLessons] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // ✅ 实时监听user progress
+  useEffect(() => {
+    if (!user) {
+      setCompletedLessons([]);
+      return;
+    }
+
+    console.log('👂 Setting up real-time listener for user progress...');
+    
+    const userProgressRef = doc(db, 'userProgress', user.uid);
+    const unsubscribe = onSnapshot(
+      userProgressRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const progressData = snapshot.data();
+          const completed = progressData.completedLessons || [];
+          console.log('🔄 Progress updated! Completed lessons:', completed);
+          setCompletedLessons(completed);
+        } else {
+          console.log('📭 No progress data yet');
+          setCompletedLessons([]);
+        }
+      },
+      (error) => {
+        console.error('❌ Error listening to progress:', error);
+      }
+    );
+
+    return () => {
+      console.log('🔇 Unsubscribing from progress listener');
+      unsubscribe();
+    };
+  }, [user]);
+
+  // ✅ 加载module和lessons (统一结构!)
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        console.log('🔍 Fetching reading module data from Firebase...');
+
+        // 1. Fetch module data
+        const moduleRef = doc(db, 'modules', 'reading');
+        const moduleSnap = await getDoc(moduleRef);
+        
+        if (moduleSnap.exists()) {
+          const moduleData = { id: moduleSnap.id, ...moduleSnap.data() };
+          setModule(moduleData);
+          console.log('✅ Module loaded:', moduleData);
+        } else {
+          console.error('❌ Reading module not found in Firebase');
+          toast.error('Reading module not found');
+        }
+
+        // 2. Fetch lessons (统一结构 - 跟Grammar/Vocabulary一样!)
+        const lessonsQuery = query(
+          collection(db, 'lessons'),
+          where('moduleId', '==', 'reading'),
+          orderBy('order')
+        );
+        
+        const lessonsSnapshot = await getDocs(lessonsQuery);
+        const lessonsData = lessonsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setLessons(lessonsData);
+        console.log('✅ Lessons loaded:', lessonsData.length, 'lessons');
+
+        // 3. Fetch initial progress
+        if (user) {
+          const userProgressRef = doc(db, 'userProgress', user.uid);
+          const userProgressSnap = await getDoc(userProgressRef);
+          
+          if (userProgressSnap.exists()) {
+            const progressData = userProgressSnap.data();
+            setCompletedLessons(progressData.completedLessons || []);
+            console.log('✅ Initial completed lessons:', progressData.completedLessons);
+          }
+        }
+
+      } catch (error: any) {
+        console.error('❌ Error fetching data:', error);
+        toast.error('Failed to load reading module');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [user]);
+
+  // ✅ Sequential unlock logic (跟Grammar/Vocabulary一样!)
+  const getLessonStatus = (lesson: any, index: number) => {
+    const isCompleted = completedLessons.includes(lesson.id);
+    
+    // 第一个lesson永远解锁
+    if (index === 0) {
+      return {
+        isCompleted,
+        isLocked: false,
+        canStart: lesson.hasContent,
+        lockReason: null
+      };
+    }
+    
+    // 检查上一个lesson是否完成
+    const previousLesson = lessons[index - 1];
+    const isPreviousCompleted = completedLessons.includes(previousLesson.id);
+    
+    // 如果上一个lesson没完成，这个lesson就锁住
+    if (!isPreviousCompleted) {
+      return {
+        isCompleted,
+        isLocked: true,
+        canStart: false,
+        lockReason: `Complete "${previousLesson.title}" first`
+      };
+    }
+    
+    // 上一个完成了，这个解锁
+    return {
+      isCompleted,
+      isLocked: false,
+      canStart: lesson.hasContent,
+      lockReason: null
+    };
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] text-white flex flex-col items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-400 mb-4" />
+        <p className="text-gray-400">Loading Reading Module...</p>
+      </div>
+    );
+  }
+
+  // Error state
+  if (!module) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] text-white flex flex-col items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl mb-4">Module not found</h2>
+          <Button onClick={() => navigate('/dashboard')} className="bg-blue-500">
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // 计算进度
+  const completedCount = lessons.filter(l => completedLessons.includes(l.id)).length;
+  const progress = lessons.length > 0 
+    ? Math.round((completedCount / lessons.length) * 100) 
+    : 0;
 
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-white">
@@ -37,12 +196,14 @@ export default function ReadingModule() {
               <FileText className="w-8 h-8 text-white" />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-display font-bold mb-2">Reading Comprehension</h1>
-              <p className="text-gray-400 mb-4">Read passages and answer questions to improve comprehension</p>
+              <h1 className="text-2xl font-display font-bold mb-2">{module.title}</h1>
+              <p className="text-gray-400 mb-4">{module.description}</p>
               <div className="flex items-center gap-4">
                 <div className="flex-1 max-w-xs">
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-400">{completedCount} of {exercises.length} exercises</span>
+                    <span className="text-gray-400">
+                      {completedCount} of {lessons.length} lessons
+                    </span>
                     <span className="text-blue-400 font-medium">{progress}%</span>
                   </div>
                   <Progress value={progress} className="h-2 bg-white/10" />
@@ -53,67 +214,146 @@ export default function ReadingModule() {
         </div>
       </div>
 
-      {/* Exercises List */}
+      {/* Lessons List */}
       <div className="max-w-4xl mx-auto px-6 py-8">
-        <h2 className="text-lg font-semibold mb-6">Reading Exercises</h2>
-        <div className="space-y-3">
-          {exercises.map((exercise, index) => (
-            <motion.div
-              key={String(exercise.id)}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              onClick={() => {
-                if (!exercise.locked && typeof exercise.id === 'string') {
-                  navigate(`/modules/reading/exercise/${exercise.id}`);
-                }
-              }}
-              className={`bg-[#111827] rounded-xl border border-white/10 p-4 flex items-center gap-4 ${
-                exercise.locked ? 'opacity-50' : 'hover:border-white/20 cursor-pointer'
-              }`}
-            >
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                exercise.completed
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : exercise.locked
-                  ? 'bg-white/5 text-gray-500'
-                  : 'bg-blue-500/20 text-blue-400'
-              }`}>
-                {exercise.completed ? (
-                  <CheckCircle2 className="w-5 h-5" />
-                ) : exercise.locked ? (
-                  <Lock className="w-4 h-4" />
-                ) : (
-                  <span className="text-sm font-semibold">{index + 1}</span>
-                )}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium text-white">{exercise.title}</h3>
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <span>{exercise.type}</span>
-                  <span>•</span>
-                  <span>{exercise.duration}</span>
-                </div>
-              </div>
-              {!exercise.locked && typeof exercise.id === 'string' && (
-                <Button
-                  size="sm"
-                  className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/modules/reading/exercise/${exercise.id}`);
+        <h2 className="text-lg font-semibold mb-6">Reading Lessons</h2>
+        
+        {lessons.length === 0 ? (
+          <div className="bg-[#111827] rounded-xl border border-white/10 p-8 text-center">
+            <p className="text-gray-400">No lessons available yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {lessons.map((lesson, index) => {
+              const status = getLessonStatus(lesson, index);
+              const { isCompleted, isLocked, canStart, lockReason } = status;
+              
+              return (
+                <motion.div
+                  key={lesson.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  onClick={() => {
+                    if (isLocked) {
+                      toast.info(lockReason || 'Complete previous lessons to unlock');
+                    } else if (!canStart) {
+                      toast.info('This lesson content is coming soon!');
+                    } else {
+                      navigate(`/lesson/reading/${lesson.id}`);
+                    }
                   }}
+                  className={`bg-[#111827] rounded-xl border border-white/10 p-4 flex items-center gap-4 transition-all ${
+                    isLocked 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : canStart
+                      ? 'hover:border-white/20 hover:shadow-lg cursor-pointer'
+                      : 'cursor-default'
+                  }`}
                 >
-                  <Play className="w-4 h-4 mr-1" />
-                  Start
-                </Button>
-              )}
-              {exercise.locked && (
-                <span className="text-xs text-gray-500">Coming soon</span>
-              )}
-            </motion.div>
-          ))}
-        </div>
+                  {/* Icon */}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                    isCompleted
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : isLocked
+                      ? 'bg-white/5 text-gray-600'
+                      : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {isCompleted ? (
+                      <CheckCircle2 className="w-5 h-5" />
+                    ) : isLocked ? (
+                      <Lock className="w-4 h-4" />
+                    ) : (
+                      <span className="text-sm font-semibold">{lesson.order}</span>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1">
+                    <h3 className={`font-medium ${isLocked ? 'text-gray-500' : 'text-white'}`}>
+                      {lesson.title}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-sm text-gray-500">{lesson.type}</p>
+                      <span className="text-gray-600">•</span>
+                      <p className="text-sm text-gray-500">{lesson.duration}</p>
+                      {lesson.difficulty && !isLocked && (
+                        <>
+                          <span className="text-gray-600">•</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            lesson.difficulty === 'beginner' ? 'bg-green-500/20 text-green-400' :
+                            lesson.difficulty === 'intermediate' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}>
+                            {lesson.difficulty}
+                          </span>
+                        </>
+                      )}
+                      {isLocked && lockReason && (
+                        <>
+                          <span className="text-gray-600">•</span>
+                          <span className="text-xs text-gray-600 italic">
+                            🔒 {lockReason}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Button */}
+                  <div>
+                    {!isLocked && !isCompleted && canStart && (
+                      <Button
+                        size="sm"
+                        className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/lesson/reading/${lesson.id}`);
+                        }}
+                      >
+                        <Play className="w-4 h-4 mr-1" />
+                        Start
+                      </Button>
+                    )}
+                    
+                    {!isLocked && !isCompleted && !canStart && (
+                      <span className="text-xs text-gray-500 px-3">Coming soon</span>
+                    )}
+                    
+                    {isCompleted && canStart && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/lesson/reading/${lesson.id}`);
+                        }}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1" />
+                        Review
+                      </Button>
+                    )}
+                    
+                    {isCompleted && !canStart && (
+                      <span className="text-xs text-emerald-400 px-3">
+                        <CheckCircle2 className="w-3 h-3 inline mr-1" />
+                        Completed
+                      </span>
+                    )}
+                    
+                    {isLocked && (
+                      <span className="text-xs text-gray-600 px-3 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        Locked
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

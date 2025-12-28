@@ -1,20 +1,182 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, PenTool, Play, Lock } from 'lucide-react';
+import { ArrowLeft, PenTool, Play, Lock, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
-const prompts = [
-  { id: 'writing-1', title: 'Describe Your Hometown', type: 'Descriptive Essay', level: 'Beginner', wordLimit: '150-300' },
-  { id: 'writing-2', title: 'A Letter to Your Future Self', type: 'Personal Letter', level: 'Beginner', wordLimit: '200-350' },
-  { id: 3, title: 'My Favorite Holiday', type: 'Narrative Essay', level: 'Beginner', locked: true, wordLimit: '200-400' },
-  { id: 4, title: 'The Importance of Education', type: 'Argumentative Essay', level: 'Intermediate', locked: true, wordLimit: '300-500' },
-  { id: 5, title: 'A Person Who Inspires Me', type: 'Descriptive Essay', level: 'Intermediate', locked: true, wordLimit: '250-400' },
-  { id: 6, title: 'Technology: Friend or Foe?', type: 'Argumentative Essay', level: 'Advanced', locked: true, wordLimit: '400-600' },
-];
+import { Progress } from '@/components/ui/progress';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 export default function WritingModule() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  
+  const [module, setModule] = useState<any>(null);
+  const [lessons, setLessons] = useState<any[]>([]);
+  const [completedLessons, setCompletedLessons] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // ✅ Real-time listener for user progress
+  useEffect(() => {
+    if (!user) {
+      setCompletedLessons([]);
+      return;
+    }
+
+    console.log('✍️ Setting up real-time listener for writing progress...');
+    
+    const userProgressRef = doc(db, 'userProgress', user.uid);
+    const unsubscribe = onSnapshot(
+      userProgressRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const progressData = snapshot.data();
+          const completed = progressData.completedLessons || [];
+          console.log('🔄 Progress updated! Completed lessons:', completed);
+          setCompletedLessons(completed);
+        } else {
+          console.log('📭 No progress data yet');
+          setCompletedLessons([]);
+        }
+      },
+      (error) => {
+        console.error('❌ Error listening to progress:', error);
+      }
+    );
+
+    return () => {
+      console.log('🔇 Unsubscribing from progress listener');
+      unsubscribe();
+    };
+  }, [user]);
+
+  // ✅ Load module and lessons
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        console.log('🔍 Fetching writing module data from Firebase...');
+
+        // 1. Fetch module data
+        const moduleRef = doc(db, 'modules', 'writing');
+        const moduleSnap = await getDoc(moduleRef);
+        
+        if (moduleSnap.exists()) {
+          const moduleData = { id: moduleSnap.id, ...moduleSnap.data() };
+          setModule(moduleData);
+          console.log('✅ Module loaded:', moduleData);
+        } else {
+          console.error('❌ Writing module not found in Firebase');
+          toast.error('Writing module not found');
+        }
+
+        // 2. Fetch lessons
+        const lessonsQuery = query(
+          collection(db, 'lessons'),
+          where('moduleId', '==', 'writing'),
+          orderBy('order')
+        );
+        
+        const lessonsSnapshot = await getDocs(lessonsQuery);
+        const lessonsData = lessonsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setLessons(lessonsData);
+        console.log('✅ Lessons loaded:', lessonsData.length, 'lessons');
+
+        // 3. Fetch initial progress
+        if (user) {
+          const userProgressRef = doc(db, 'userProgress', user.uid);
+          const userProgressSnap = await getDoc(userProgressRef);
+          
+          if (userProgressSnap.exists()) {
+            const progressData = userProgressSnap.data();
+            setCompletedLessons(progressData.completedLessons || []);
+            console.log('✅ Initial completed lessons:', progressData.completedLessons);
+          }
+        }
+
+      } catch (error: any) {
+        console.error('❌ Error fetching data:', error);
+        toast.error('Failed to load writing module');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [user]);
+
+  // ✅ Sequential unlock logic
+  const getLessonStatus = (lesson: any, index: number) => {
+    const isCompleted = completedLessons.includes(lesson.id);
+    
+    // First lesson always unlocked
+    if (index === 0) {
+      return {
+        isCompleted,
+        isLocked: false,
+        canStart: lesson.hasContent,
+        lockReason: null
+      };
+    }
+    
+    // Check if previous lesson completed
+    const previousLesson = lessons[index - 1];
+    const isPreviousCompleted = completedLessons.includes(previousLesson.id);
+    
+    // If previous lesson not completed, lock this one
+    if (!isPreviousCompleted) {
+      return {
+        isCompleted,
+        isLocked: true,
+        canStart: false,
+        lockReason: `Complete "${previousLesson.title}" first`
+      };
+    }
+    
+    // Previous completed, unlock this one
+    return {
+      isCompleted,
+      isLocked: false,
+      canStart: lesson.hasContent,
+      lockReason: null
+    };
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] text-white flex flex-col items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-emerald-400 mb-4" />
+        <p className="text-gray-400">Loading Writing Module...</p>
+      </div>
+    );
+  }
+
+  // Error state
+  if (!module) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] text-white flex flex-col items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl mb-4">Module not found</h2>
+          <Button onClick={() => navigate('/dashboard')} className="bg-emerald-500">
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate progress
+  const completedCount = lessons.filter(l => completedLessons.includes(l.id)).length;
+  const progress = lessons.length > 0 
+    ? Math.round((completedCount / lessons.length) * 100) 
+    : 0;
 
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-white">
@@ -34,8 +196,19 @@ export default function WritingModule() {
               <PenTool className="w-8 h-8 text-white" />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-display font-bold mb-2">Writing Practice</h1>
-              <p className="text-gray-400 mb-4">Write essays based on prompts and get feedback from admins</p>
+              <h1 className="text-2xl font-display font-bold mb-2">{module.title}</h1>
+              <p className="text-gray-400 mb-4">{module.description}</p>
+              <div className="flex items-center gap-4">
+                <div className="flex-1 max-w-xs">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-400">
+                      {completedCount} of {lessons.length} lessons
+                    </span>
+                    <span className="text-emerald-400 font-medium">{progress}%</span>
+                  </div>
+                  <Progress value={progress} className="h-2 bg-white/10" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -44,63 +217,145 @@ export default function WritingModule() {
       {/* Writing Prompts List */}
       <div className="max-w-4xl mx-auto px-6 py-8">
         <h2 className="text-lg font-semibold mb-6">Writing Prompts</h2>
-        <div className="space-y-3">
-          {prompts.map((prompt, index) => (
-            <motion.div
-              key={String(prompt.id)}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              onClick={() => {
-                if (!prompt.locked && typeof prompt.id === 'string') {
-                  navigate(`/modules/writing/exercise/${prompt.id}`);
-                }
-              }}
-              className={`bg-[#111827] rounded-xl border border-white/10 p-4 flex items-center gap-4 ${
-                prompt.locked ? 'opacity-50' : 'hover:border-white/20 cursor-pointer'
-              }`}
-            >
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                prompt.locked
-                  ? 'bg-white/5 text-gray-500'
-                  : 'bg-emerald-500/20 text-emerald-400'
-              }`}>
-                {prompt.locked ? (
-                  <Lock className="w-4 h-4" />
-                ) : (
-                  <span className="text-sm font-semibold">{index + 1}</span>
-                )}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium text-white">{prompt.title}</h3>
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <span>{prompt.type}</span>
-                  <span>•</span>
-                  <span>{prompt.level}</span>
-                  <span>•</span>
-                  <span>{prompt.wordLimit} words</span>
-                </div>
-              </div>
-              {!prompt.locked && typeof prompt.id === 'string' && (
-                <Button
-                  size="sm"
-                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/modules/writing/exercise/${prompt.id}`);
+        
+        {lessons.length === 0 ? (
+          <div className="bg-[#111827] rounded-xl border border-white/10 p-8 text-center">
+            <p className="text-gray-400">No lessons available yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {lessons.map((lesson, index) => {
+              const status = getLessonStatus(lesson, index);
+              const { isCompleted, isLocked, canStart, lockReason } = status;
+              
+              return (
+                <motion.div
+                  key={lesson.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  onClick={() => {
+                    if (isLocked) {
+                      toast.info(lockReason || 'Complete previous lessons to unlock');
+                    } else if (!canStart) {
+                      toast.info('This lesson content is coming soon!');
+                    } else {
+                      navigate(`/lesson/writing/${lesson.id}`);
+                    }
                   }}
+                  className={`bg-[#111827] rounded-xl border border-white/10 p-4 flex items-center gap-4 transition-all ${
+                    isLocked 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : canStart
+                      ? 'hover:border-white/20 hover:shadow-lg cursor-pointer'
+                      : 'cursor-default'
+                  }`}
                 >
-                  <Play className="w-4 h-4 mr-1" />
-                  Start
-                </Button>
-              )}
-              {prompt.locked && (
-                <span className="text-xs text-gray-500">Coming soon</span>
-              )}
-            </motion.div>
-          ))}
-        </div>
+                  {/* Icon */}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                    isCompleted
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : isLocked
+                      ? 'bg-white/5 text-gray-600'
+                      : 'bg-emerald-500/20 text-emerald-400'
+                  }`}>
+                    {isCompleted ? (
+                      <CheckCircle2 className="w-5 h-5" />
+                    ) : isLocked ? (
+                      <Lock className="w-4 h-4" />
+                    ) : (
+                      <span className="text-sm font-semibold">{lesson.order}</span>
+                    )}
+                  </div>
 
+                  {/* Info */}
+                  <div className="flex-1">
+                    <h3 className={`font-medium ${isLocked ? 'text-gray-500' : 'text-white'}`}>
+                      {lesson.title}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-sm text-gray-500">{lesson.type}</p>
+                      <span className="text-gray-600">•</span>
+                      <p className="text-sm text-gray-500">{lesson.duration}</p>
+                      {lesson.difficulty && !isLocked && (
+                        <>
+                          <span className="text-gray-600">•</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            lesson.difficulty === 'beginner' ? 'bg-green-500/20 text-green-400' :
+                            lesson.difficulty === 'intermediate' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}>
+                            {lesson.difficulty}
+                          </span>
+                        </>
+                      )}
+                      {isLocked && lockReason && (
+                        <>
+                          <span className="text-gray-600">•</span>
+                          <span className="text-xs text-gray-600 italic">
+                            🔒 {lockReason}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Button */}
+                  <div>
+                    {!isLocked && !isCompleted && canStart && (
+                      <Button
+                        size="sm"
+                        className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/lesson/writing/${lesson.id}`);
+                        }}
+                      >
+                        <Play className="w-4 h-4 mr-1" />
+                        Start
+                      </Button>
+                    )}
+                    
+                    {!isLocked && !isCompleted && !canStart && (
+                      <span className="text-xs text-gray-500 px-3">Coming soon</span>
+                    )}
+                    
+                    {isCompleted && canStart && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/lesson/writing/${lesson.id}`);
+                        }}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1" />
+                        Review
+                      </Button>
+                    )}
+                    
+                    {isCompleted && !canStart && (
+                      <span className="text-xs text-emerald-400 px-3">
+                        <CheckCircle2 className="w-3 h-3 inline mr-1" />
+                        Completed
+                      </span>
+                    )}
+                    
+                    {isLocked && (
+                      <span className="text-xs text-gray-600 px-3 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        Locked
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Info Card */}
         <div className="mt-8 bg-white/5 rounded-xl border border-white/10 p-6">
           <h3 className="font-semibold mb-2 text-emerald-400">How it works</h3>
           <ul className="space-y-2 text-sm text-gray-400">
@@ -114,11 +369,11 @@ export default function WritingModule() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-emerald-400">3.</span>
-              <span>Submit your essay for review</span>
+              <span>Complete the lesson to earn XP rewards</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-emerald-400">4.</span>
-              <span>An admin will grade your work and provide detailed feedback</span>
+              <span>Unlock new prompts by completing previous ones</span>
             </li>
           </ul>
         </div>
