@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { saveLessonProgress } from '@/utils/progressTracking';
+import SpeakingRecorder from '@/components/SpeakingRecorder';
 
 const optionLetters = ['A', 'B', 'C', 'D'];
 
@@ -38,10 +39,13 @@ export default function LessonPage() {
   // Audio state for listening
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // ✅ Writing states
+  // Writing states
   const [essay, setEssay] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [essaySubmitted, setEssaySubmitted] = useState(false);
+
+  // Speaking states
+  const [promptScores, setPromptScores] = useState<number[]>([]);
 
   useEffect(() => {
     async function fetchData() {
@@ -116,10 +120,12 @@ export default function LessonPage() {
     );
   }
 
-  // ✅ 检测module类型
+  // 检测module类型
   const isReading = moduleId === 'reading';
   const isListening = moduleId === 'listening';
   const isWriting = moduleId === 'writing';
+  const isSpeaking = moduleId === 'speaking';
+  const speakingPrompts = content?.speakingPrompts || [];
   
   const hasReadingExercise = content?.readingExercise && content.readingExercise.questions?.length > 0;
   const hasListeningExercises = content?.listeningExercises && content.listeningExercises.length > 0;
@@ -128,11 +134,13 @@ export default function LessonPage() {
   const totalSections = content?.sections?.length || 0;
   const section = content?.sections?.[currentSection];
   
-  // ✅ 根据module type选择exercises
+  // 根据module type选择exercises
   const exercises = isListening && hasListeningExercises 
     ? content.listeningExercises 
     : isReading && hasReadingExercise 
     ? content.readingExercise.questions 
+    : isSpeaking && speakingPrompts.length > 0
+    ? speakingPrompts  
     : (content?.exercises || []);
   
   const hasExercises = exercises.length > 0;
@@ -141,13 +149,15 @@ export default function LessonPage() {
   const currentStep = isExerciseMode 
     ? totalSections + currentExercise + 1 
     : currentSection + 1;
-  const progress = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
+  const progress = totalSteps > 0 
+    ? Math.min(100, Math.round((currentStep / totalSteps) * 100))
+    : 0;
 
-  // ✅ 检查当前exercise的类型
+  // 检查当前exercise的类型
   const currentExerciseData = exercises[currentExercise];
   const exerciseType = currentExerciseData?.type || 'multiple-choice';
 
-  // ✅ Writing word count
+  // Writing word count
   const wordCount = essay.trim() ? essay.trim().split(/\s+/).length : 0;
   const writingPrompt = content?.writingPrompt;
   const isWithinLimit = writingPrompt 
@@ -157,7 +167,7 @@ export default function LessonPage() {
     ? wordCount >= writingPrompt.wordLimit.min
     : false;
 
-  // ✅ Audio播放功能
+  // Audio播放功能
   const playAudio = (text: string) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -214,7 +224,7 @@ export default function LessonPage() {
     }
   };
 
-  // ✅ Submit essay for writing
+  // Submit essay for writing
   const handleEssaySubmit = async () => {
     if (!canSubmitEssay) return;
     
@@ -253,8 +263,13 @@ export default function LessonPage() {
     }, 2500);
   };
 
-  const handleNextExercise = async () => {
+  const handleNextExercise = async (score?: number) => {
     stopAudio();
+    
+    // Speaking: 保存分数
+    if (isSpeaking && score !== undefined) {
+      setPromptScores(prev => [...prev, score]);
+    }
     
     if (currentExercise < exercises.length - 1) {
       setCurrentExercise(prev => prev + 1);
@@ -269,6 +284,39 @@ export default function LessonPage() {
 
       setIsComplete(true);
       
+      // Speaking: 计算加权总分
+      let finalScore = scorePercentage;
+      let finalTotalQuestions = totalQuestions;
+      let finalCorrectAnswers = finalCorrectCount;
+      
+      if (isSpeaking && promptScores.length > 0) {
+        const allScores = score !== undefined ? [...promptScores, score] : promptScores;
+        
+        // 加权
+        const weights = allScores.length === 5 
+          ? [0.15, 0.15, 0.20, 0.20, 0.30]
+          : allScores.length === 3
+          ? [0.25, 0.30, 0.45]
+          : allScores.map(() => 1 / allScores.length);
+        
+        let weightedScore = 0;
+        for (let i = 0; i < allScores.length; i++) {
+          weightedScore += allScores[i] * weights[i];
+        }
+        
+        // 奖励
+        let bonus = 0;
+        if (allScores.every(s => s >= 90)) bonus += 5;
+        if (allScores.length >= 2 && allScores[allScores.length - 1] - allScores[0] >= 20) bonus += 3;
+        
+        finalScore = Math.min(100, Math.round(weightedScore + bonus));
+        finalTotalQuestions = allScores.length;
+        finalCorrectAnswers = allScores.filter(s => s >= 60).length;
+        
+        console.log('🎯 Speaking Final Score:', finalScore);
+        console.log('📊 All prompt scores:', allScores);
+      }
+      
       if (user) {
         try {
           const success = await saveLessonProgress({
@@ -276,16 +324,18 @@ export default function LessonPage() {
             lessonId: lessonId!,
             moduleId: moduleId!,
             completed: true,
-            score: scorePercentage,
-            totalQuestions,
-            correctAnswers: finalCorrectCount,
+            score: finalScore,
+            totalQuestions: finalTotalQuestions,
+            correctAnswers: finalCorrectAnswers,
             timeSpent,
             completedAt: new Date(),
           });
 
           if (success) {
             toast.success(
-              `🎉 Lesson completed! Score: ${finalCorrectCount}/${totalQuestions} (${scorePercentage}%)`
+              isSpeaking
+                ? `🎉 Speaking lesson completed! Final Score: ${finalScore}/100`
+                : `🎉 Lesson completed! Score: ${finalCorrectCount}/${totalQuestions} (${scorePercentage}%)`
             );
           } else {
             toast.error('Failed to save progress');
@@ -306,8 +356,10 @@ export default function LessonPage() {
 
   const handleStartExercises = async () => {
     if (isWriting && hasWritingPrompt) {
-      // For writing, start writing exercise
       setIsExerciseMode(true);
+    } else if (isSpeaking && speakingPrompts.length > 0) {
+      setIsExerciseMode(true);
+      setCurrentExercise(0);
     } else if (hasExercises) {
       setIsExerciseMode(true);
       setCurrentExercise(0);
@@ -518,7 +570,7 @@ export default function LessonPage() {
               )}
             </motion.div>
           ) : isWriting && hasWritingPrompt ? (
-            // ✅ WRITING EXERCISE MODE
+            // WRITING EXERCISE MODE
             <motion.div
               key="writing-exercise"
               initial={{ opacity: 0, y: 20 }}
@@ -651,14 +703,21 @@ export default function LessonPage() {
               )}
             </motion.div>
           ) : (
-            // EXERCISES MODE (Reading, Listening, Grammar, Vocabulary)
+            // EXERCISES MODE (Reading, Listening, Grammar, Vocabulary, Speaking)
             <motion.div
               key={`exercise-${currentExercise}`}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
-              {isReading && hasReadingExercise ? (
+              {isSpeaking && speakingPrompts.length > 0 ? (
+                <SpeakingRecorder
+                  prompt={speakingPrompts[currentExercise]}
+                  onComplete={handleNextExercise}
+                  currentPromptIndex={currentExercise}
+                  totalPrompts={speakingPrompts.length}
+                />
+              ) : isReading && hasReadingExercise ? (
                 // Reading: 左右布局
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-[#0f1929] rounded-2xl p-8 lg:sticky lg:top-6 lg:self-start">
@@ -743,7 +802,7 @@ export default function LessonPage() {
                     {showResult && (
                       <div className="flex justify-end">
                         <Button
-                          onClick={handleNextExercise}
+                          onClick={() => handleNextExercise()}
                           className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
                         >
                           {currentExercise < exercises.length - 1 ? 'Next Question' : 'Complete Lesson'}
@@ -866,7 +925,7 @@ export default function LessonPage() {
 
                           <div className="flex justify-end">
                             <Button
-                              onClick={handleNextExercise}
+                              onClick={() => handleNextExercise()}
                               className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
                             >
                               {currentExercise < exercises.length - 1 ? 'Next Exercise' : 'Complete Lesson'}
@@ -941,7 +1000,7 @@ export default function LessonPage() {
                       {showResult && (
                         <div className="flex justify-end">
                           <Button
-                            onClick={handleNextExercise}
+                            onClick={() => handleNextExercise()}
                             className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
                           >
                             {currentExercise < exercises.length - 1 ? 'Next Exercise' : 'Complete Lesson'}
@@ -988,6 +1047,8 @@ export default function LessonPage() {
                 >
                   {isWriting && hasWritingPrompt 
                     ? 'Start Writing' 
+                    : isSpeaking && speakingPrompts.length > 0 
+                    ? 'Start Speaking' 
                     : hasExercises 
                     ? (isReading ? 'Start Reading' : isListening ? 'Start Listening' : 'Start Exercises') 
                     : 'Complete'}
@@ -998,7 +1059,9 @@ export default function LessonPage() {
           ) : (
             <div className="w-full flex justify-center">
               <span className="text-gray-400 text-sm">
-                {isWriting
+                {isSpeaking
+                  ? 'Record your speech following the prompt'
+                  : isWriting
                   ? 'Write your essay following the prompt and tips'
                   : isReading 
                   ? 'Read the passage on the left and answer the question'
