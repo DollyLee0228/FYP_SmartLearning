@@ -18,6 +18,7 @@ import { getUserProgress } from '@/utils/progressTracking';
 export default function Dashboard() {
   const { userProgress } = useLearning();
   const levelInfo = userProgress ? LEVELS[userProgress.level] : null;
+  // const [moduleLessonCounts, setModuleLessonCounts] = useState<Record<string, number>>({});
 
   return (
     <SidebarProvider>

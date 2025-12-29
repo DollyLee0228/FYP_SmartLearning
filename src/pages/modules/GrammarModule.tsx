@@ -17,6 +17,46 @@ export default function GrammarModule() {
   const [lessons, setLessons] = useState<any[]>([]);
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lessonProgress, setLessonProgress] = useState<Record<string, any>>({});
+
+  function ScoreBadge({ score }: { score?: number }) {
+    if (score === undefined) return null;
+    
+    let color = '';
+    let label = '';
+    let emoji = '';
+    
+    if (score >= 90) {
+      color = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+      label = 'Excellent';
+      emoji = '🌟';
+    } else if (score >= 80) {
+      color = 'text-blue-400 bg-blue-500/10 border-blue-500/30';
+      label = 'Good';
+      emoji = '⭐';
+    } else if (score >= 70) {
+      color = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
+      label = 'Fair';
+      emoji = '✨';
+    } else if (score >= 60) {
+      color = 'text-orange-400 bg-orange-500/10 border-orange-500/30';
+      label = 'Pass';
+      emoji = '💫';
+    } else {
+      color = 'text-gray-400 bg-gray-500/10 border-gray-500/30';
+      label = 'Need Practice';
+      emoji = '📝';
+    }
+    
+    return (
+      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${color}`}>
+        <span>{emoji}</span>
+        <span>{score}/100</span>
+        <span className="opacity-75">·</span>
+        <span>{label}</span>
+      </div>
+    );
+  }
 
   // ✅ 实时监听user progress
   useEffect(() => {
@@ -45,6 +85,8 @@ export default function GrammarModule() {
         console.error('❌ Error listening to progress:', error);
       }
     );
+
+    
 
     return () => {
       console.log('🔇 Unsubscribing from progress listener');
@@ -97,6 +139,24 @@ export default function GrammarModule() {
             const progressData = userProgressSnap.data();
             setCompletedLessons(progressData.completedLessons || []);
             console.log('✅ Initial completed lessons:', progressData.completedLessons);
+          }
+
+          try {
+            console.log('📊 Fetching lesson progress (scores)...');
+            const progressRef = collection(db, 'users', user.uid, 'progress');
+            const progressQuery = query(progressRef, where('moduleId', '==', 'grammar'));
+            const progressSnapshot = await getDocs(progressQuery);
+            
+            const progressMap: Record<string, any> = {};
+            progressSnapshot.forEach(doc => {
+              const data = doc.data();
+              progressMap[data.lessonId] = data;
+            });
+            
+            setLessonProgress(progressMap);
+            console.log('✅ Lesson progress (scores) loaded:', progressMap);
+          } catch (error) {
+            console.error('❌ Error fetching lesson progress:', error);
           }
         }
 
