@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { useNavigate } from 'react-router-dom';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -52,6 +52,7 @@ export function ModuleGrid() {
   
   const [modules, setModules] = useState<ModuleData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [moduleLessonCounts, setModuleLessonCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     async function fetchModulesAndProgress() {
@@ -68,7 +69,24 @@ export function ModuleGrid() {
 
         console.log('✅ Modules loaded:', modulesData);
 
-        // 2️⃣ 获取用户进度
+        // ✅ 2️⃣ 获取每个module的真实lesson数量
+        console.log('📊 Fetching lesson counts for each module...');
+        const lessonCounts: Record<string, number> = {};
+        
+        for (const module of modulesData) {
+          const lessonsQuery = query(
+            collection(db, 'lessons'),
+            where('moduleId', '==', module.id)
+          );
+          const lessonsSnapshot = await getDocs(lessonsQuery);
+          lessonCounts[module.id] = lessonsSnapshot.size;
+          console.log(`  ${module.id}: ${lessonsSnapshot.size} lessons`);
+        }
+        
+        setModuleLessonCounts(lessonCounts);
+        console.log('✅ Lesson counts loaded:', lessonCounts);
+
+        // 3️⃣ 获取用户进度
         let userModuleProgress: Record<string, any> = {};
         
         if (user) {
@@ -88,7 +106,7 @@ export function ModuleGrid() {
           console.log('📭 User not logged in');
         }
 
-        // 3️⃣ 合并modules数据和进度数据
+        // 4️⃣ 合并modules数据和进度数据
         const modulesWithProgress: ModuleData[] = modulesData.map((module: any) => {
           const progressData = userModuleProgress[module.id] || {};
           
@@ -98,7 +116,8 @@ export function ModuleGrid() {
             description: module.description || '',
             icon: module.icon || 'BookOpen',
             color: module.color || 'primary',
-            totalLessons: progressData.totalLessons || module.totalLessons || 0,
+            // ✅ 使用真实查询到的lesson数量
+            totalLessons: lessonCounts[module.id] || 0,
             completedLessons: progressData.completedLessons || 0,
             order: module.order || 0,
           };
@@ -170,12 +189,11 @@ export function ModuleGrid() {
           const progress = module.totalLessons > 0 
             ? Math.round((module.completedLessons / module.totalLessons) * 100)
             : 0;
-          const gradient = colorMap[module.color] || colorMap.primary;
+          const gradient = colorMap[module.color] || colorMap.cyan;
 
           return (
             <motion.div key={module.id} variants={itemVariants}>
               <Card
-                // className="module-card group relative overflow-hidden"
                 className="module-card group relative overflow-hidden cursor-pointer"
                 onClick={() => navigate(`/modules/${module.id}`)}
               >
@@ -223,18 +241,6 @@ export function ModuleGrid() {
           );
         })}
       </div>
-
-      {/* Debug Info - 可以删除
-      {process.env.NODE_ENV === 'development' && (
-        <details className="mt-8 p-4 bg-gray-900 rounded text-xs">
-          <summary className="cursor-pointer text-gray-500 mb-2">
-            🐛 Debug: Module Progress
-          </summary>
-          <pre className="text-gray-400 overflow-auto">
-            {JSON.stringify(modules, null, 2)}
-          </pre>
-        </details>
-      )} */}
     </motion.div>
   );
 }

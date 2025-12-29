@@ -1,15 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar';
-import { videos, Video } from '@/data/videoContent';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowLeft, Play, Clock, Eye, ThumbsUp, Search, Filter } from 'lucide-react';
+import { ArrowLeft, Play, Clock, Eye, ThumbsUp, Search, Filter, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+// ✅ Video interface
+interface Video {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail: string;
+  videoUrl: string;
+  duration: string;
+  category: string;
+  level: string;
+  views: number;
+  likes: number;
+  uploadedAt?: any;
+  tags?: string[];
+}
 
 const categoryColors: Record<string, string> = {
   grammar: 'bg-blue-500/20 text-blue-400',
@@ -26,20 +44,62 @@ const levelColors: Record<string, string> = {
   B2: 'bg-sky-500/20 text-sky-400',
   C1: 'bg-violet-500/20 text-violet-400',
   C2: 'bg-violet-500/20 text-violet-400',
+  beginner: 'bg-emerald-500/20 text-emerald-400',
+  intermediate: 'bg-sky-500/20 text-sky-400',
+  advanced: 'bg-violet-500/20 text-violet-400',
 };
 
 export default function VideosPage() {
   const navigate = useNavigate();
+  
+  // ✅ States
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
 
+  // ✅ Fetch videos from Firebase
+  useEffect(() => {
+    async function fetchVideos() {
+      try {
+        setLoading(true);
+        console.log('🎥 Fetching videos from Firebase...');
+        
+        const videosQuery = query(
+          collection(db, 'videos'),
+          orderBy('uploadedAt', 'desc')
+        );
+        
+        const snapshot = await getDocs(videosQuery);
+        const videosData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Video[];
+        
+        setVideos(videosData);
+        console.log('✅ Videos loaded:', videosData.length);
+      } catch (error) {
+        console.error('❌ Error fetching videos:', error);
+        toast.error('Failed to load videos');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchVideos();
+  }, []);
+
+  // ✅ Filter videos
   const filteredVideos = videos.filter((video) => {
     const matchesSearch = video.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      video.description.toLowerCase().includes(searchQuery.toLowerCase());
+      video.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      video.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+    
     const matchesCategory = categoryFilter === 'all' || video.category === categoryFilter;
     const matchesLevel = levelFilter === 'all' || video.level === levelFilter;
+    
     return matchesSearch && matchesCategory && matchesLevel;
   });
 
@@ -49,6 +109,25 @@ export default function VideosPage() {
     }
     return views.toString();
   };
+
+  // ✅ Loading state
+  if (loading) {
+    return (
+      <SidebarProvider>
+        <div className="flex min-h-screen w-full bg-white">
+          <DashboardSidebar />
+          <main className="flex-1 p-6 lg:p-8 overflow-auto">
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+                <p className="text-muted-foreground">Loading videos...</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      </SidebarProvider>
+    );
+  }
 
   return (
     <SidebarProvider>
@@ -109,6 +188,9 @@ export default function VideosPage() {
                   <SelectItem value="B2">B2</SelectItem>
                   <SelectItem value="C1">C1</SelectItem>
                   <SelectItem value="C2">C2</SelectItem>
+                  <SelectItem value="beginner">Beginner</SelectItem>
+                  <SelectItem value="intermediate">Intermediate</SelectItem>
+                  <SelectItem value="advanced">Advanced</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -140,8 +222,10 @@ export default function VideosPage() {
                 </div>
                 <CardContent className="p-4">
                   <div className="flex gap-2 mb-2">
-                    <Badge className={levelColors[video.level]}>{video.level}</Badge>
-                    <Badge className={categoryColors[video.category]}>
+                    <Badge className={levelColors[video.level] || levelColors.beginner}>
+                      {video.level.toUpperCase()}
+                    </Badge>
+                    <Badge className={categoryColors[video.category] || categoryColors.grammar}>
                       {video.category.charAt(0).toUpperCase() + video.category.slice(1)}
                     </Badge>
                   </div>
@@ -154,11 +238,11 @@ export default function VideosPage() {
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Eye className="w-3 h-3" />
-                      {formatViews(video.views)}
+                      {formatViews(video.views || 0)}
                     </span>
                     <span className="flex items-center gap-1">
                       <ThumbsUp className="w-3 h-3" />
-                      {formatViews(video.likes)}
+                      {formatViews(video.likes || 0)}
                     </span>
                   </div>
                 </CardContent>
@@ -191,8 +275,10 @@ export default function VideosPage() {
                 <div className="flex gap-2 mb-3">
                   {selectedVideo && (
                     <>
-                      <Badge className={levelColors[selectedVideo.level]}>{selectedVideo.level}</Badge>
-                      <Badge className={categoryColors[selectedVideo.category]}>
+                      <Badge className={levelColors[selectedVideo.level] || levelColors.beginner}>
+                        {selectedVideo.level.toUpperCase()}
+                      </Badge>
+                      <Badge className={categoryColors[selectedVideo.category] || categoryColors.grammar}>
                         {selectedVideo.category.charAt(0).toUpperCase() + selectedVideo.category.slice(1)}
                       </Badge>
                     </>
