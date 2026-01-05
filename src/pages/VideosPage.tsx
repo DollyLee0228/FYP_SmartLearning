@@ -37,13 +37,8 @@ const categoryColors: Record<string, string> = {
   culture: 'bg-pink-500/20 text-pink-400',
 };
 
+// ✅ 只用3个级别
 const levelColors: Record<string, string> = {
-  A1: 'bg-emerald-500/20 text-emerald-400',
-  A2: 'bg-emerald-500/20 text-emerald-400',
-  B1: 'bg-sky-500/20 text-sky-400',
-  B2: 'bg-sky-500/20 text-sky-400',
-  C1: 'bg-violet-500/20 text-violet-400',
-  C2: 'bg-violet-500/20 text-violet-400',
   beginner: 'bg-emerald-500/20 text-emerald-400',
   intermediate: 'bg-sky-500/20 text-sky-400',
   advanced: 'bg-violet-500/20 text-violet-400',
@@ -52,7 +47,7 @@ const levelColors: Record<string, string> = {
 export default function VideosPage() {
   const navigate = useNavigate();
   
-  // ✅ States
+  // States
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,7 +55,7 @@ export default function VideosPage() {
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
 
-  // ✅ Fetch videos from Firebase
+  // Fetch videos from Firebase
   useEffect(() => {
     async function fetchVideos() {
       try {
@@ -91,7 +86,7 @@ export default function VideosPage() {
     fetchVideos();
   }, []);
 
-  // ✅ Filter videos
+  // Filter videos
   const filteredVideos = videos.filter((video) => {
     const matchesSearch = video.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       video.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -110,7 +105,7 @@ export default function VideosPage() {
     return views.toString();
   };
 
-  // ✅ Loading state
+  // Loading state
   if (loading) {
     return (
       <SidebarProvider>
@@ -176,18 +171,14 @@ export default function VideosPage() {
                   <SelectItem value="culture">Culture</SelectItem>
                 </SelectContent>
               </Select>
+              
+              {/* ✅ 只有3个Level选项 */}
               <Select value={levelFilter} onValueChange={setLevelFilter}>
-                <SelectTrigger className="w-[120px] bg-card border-border">
+                <SelectTrigger className="w-[140px] bg-card border-border">
                   <SelectValue placeholder="Level" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Levels</SelectItem>
-                  <SelectItem value="A1">A1</SelectItem>
-                  <SelectItem value="A2">A2</SelectItem>
-                  <SelectItem value="B1">B1</SelectItem>
-                  <SelectItem value="B2">B2</SelectItem>
-                  <SelectItem value="C1">C1</SelectItem>
-                  <SelectItem value="C2">C2</SelectItem>
                   <SelectItem value="beginner">Beginner</SelectItem>
                   <SelectItem value="intermediate">Intermediate</SelectItem>
                   <SelectItem value="advanced">Advanced</SelectItem>
@@ -222,8 +213,9 @@ export default function VideosPage() {
                 </div>
                 <CardContent className="p-4">
                   <div className="flex gap-2 mb-2">
+                    {/* ✅ Level badge - 首字母大写 */}
                     <Badge className={levelColors[video.level] || levelColors.beginner}>
-                      {video.level.toUpperCase()}
+                      {video.level.charAt(0).toUpperCase() + video.level.slice(1)}
                     </Badge>
                     <Badge className={categoryColors[video.category] || categoryColors.grammar}>
                       {video.category.charAt(0).toUpperCase() + video.category.slice(1)}
@@ -276,7 +268,7 @@ export default function VideosPage() {
                   {selectedVideo && (
                     <>
                       <Badge className={levelColors[selectedVideo.level] || levelColors.beginner}>
-                        {selectedVideo.level.toUpperCase()}
+                        {selectedVideo.level.charAt(0).toUpperCase() + selectedVideo.level.slice(1)}
                       </Badge>
                       <Badge className={categoryColors[selectedVideo.category] || categoryColors.grammar}>
                         {selectedVideo.category.charAt(0).toUpperCase() + selectedVideo.category.slice(1)}
