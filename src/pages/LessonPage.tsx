@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { saveLessonProgress } from '@/utils/progressTracking';
 import SpeakingRecorder from '@/components/SpeakingRecorder';
+import { checkAchievements } from '@/utils/checkAchievements';
 
 const optionLetters = ['A', 'B', 'C', 'D'];
 
@@ -249,6 +250,23 @@ export default function LessonPage() {
           timeSpent,
           completedAt: new Date(),
         });
+
+        console.log('🔍 Checking achievements...');
+      const newAchievements = await checkAchievements(user.uid);
+      
+      for (const ach of newAchievements) {
+        toast.success(
+          `🎉 Achievement Unlocked!`,
+          { 
+            description: `${ach.icon || '🏆'} ${ach.title} (+${ach.points} XP)`,
+            duration: 5000
+          }
+        );
+      }
+      
+      if (newAchievements.length > 0) {
+        console.log(`✅ Unlocked ${newAchievements.length} achievements!`);
+      }
         
         toast.success('🎉 Essay submitted! Lesson completed!');
       } catch (error) {
@@ -332,11 +350,32 @@ export default function LessonPage() {
           });
 
           if (success) {
-            toast.success(
-              isSpeaking
-                ? `🎉 Speaking lesson completed! Final Score: ${finalScore}/100`
-                : `🎉 Lesson completed! Score: ${finalCorrectCount}/${totalQuestions} (${scorePercentage}%)`
-            );
+          // ✅ 在这里添加！
+          console.log('🔍 Checking achievements...');
+          const newAchievements = await checkAchievements(user.uid);
+          
+          toast.success(
+            isSpeaking
+              ? `🎉 Speaking lesson completed! Final Score: ${finalScore}/100`
+              : `🎉 Lesson completed! Score: ${finalCorrectCount}/${totalQuestions} (${scorePercentage}%)`
+          );
+          
+          // 延迟显示achievement通知
+          for (const ach of newAchievements) {
+            setTimeout(() => {
+              toast.success(
+                `🎉 Achievement Unlocked!`,
+                { 
+                  description: `${ach.icon || '🏆'} ${ach.title} (+${ach.points} XP)`,
+                  duration: 5000
+                }
+              );
+            }, 500);
+          }
+          
+          if (newAchievements.length > 0) {
+            console.log(`✅ Unlocked ${newAchievements.length} achievements!`);
+          }
           } else {
             toast.error('Failed to save progress');
           }
@@ -376,7 +415,26 @@ export default function LessonPage() {
           completedAt: new Date(),
         });
         
-        toast.success('🎉 Lesson completed!');
+        console.log('🔍 Checking achievements...');
+      const newAchievements = await checkAchievements(user.uid);
+      
+      toast.success('🎉 Lesson completed!');
+      
+      for (const ach of newAchievements) {
+        setTimeout(() => {
+          toast.success(
+            `🎉 Achievement Unlocked!`,
+            { 
+              description: `${ach.icon || '🏆'} ${ach.title} (+${ach.points} XP)`,
+              duration: 5000
+            }
+          );
+        }, 500);
+      }
+      
+      if (newAchievements.length > 0) {
+        console.log(`✅ Unlocked ${newAchievements.length} achievements!`);
+      }
       }
       
       setTimeout(() => navigate(`/modules/${moduleId}`), 1500);
