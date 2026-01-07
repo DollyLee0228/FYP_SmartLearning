@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { saveLessonProgress } from '@/utils/progressTracking';
 import SpeakingRecorder from '@/components/SpeakingRecorder';
 import { checkAchievements } from '@/utils/checkAchievements';
+import { updateStreak } from '@/utils/streakTracking';
 
 const optionLetters = ['A', 'B', 'C', 'D'];
 
@@ -250,6 +251,7 @@ export default function LessonPage() {
           timeSpent,
           completedAt: new Date(),
         });
+        await updateStreak(user.uid);
 
         console.log('🔍 Checking achievements...');
       const newAchievements = await checkAchievements(user.uid);
@@ -350,6 +352,7 @@ export default function LessonPage() {
           });
 
           if (success) {
+            await updateStreak(user.uid); // for when the streak update will also display here
           // ✅ 在这里添加！
           console.log('🔍 Checking achievements...');
           const newAchievements = await checkAchievements(user.uid);
@@ -414,6 +417,7 @@ export default function LessonPage() {
           timeSpent,
           completedAt: new Date(),
         });
+        await updateStreak(user.uid);
         
         console.log('🔍 Checking achievements...');
       const newAchievements = await checkAchievements(user.uid);

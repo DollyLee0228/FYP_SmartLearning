@@ -1,21 +1,44 @@
-import React from 'react';
+// AchievementsWidget.tsx - 修复进度计算
+// ✅ 使用getUserProgress获取真实进度
+// ✅ 修复All-Rounder显示问题
+
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { Trophy, Star, Flame, BookOpen, Target, Zap, Medal, Crown, Lock, Sparkles } from 'lucide-react';
+import { 
+  Trophy, Star, Flame, BookOpen, Target, Zap, Medal, Crown, Lock, Sparkles,
+  GraduationCap, Award, BookCheck, Sunrise, Moon, Video
+} from 'lucide-react';
+import { getUserProgress, calculateAchievementProgress } from '@/utils/getUserProgress';
+
+const iconMap: Record<string, React.ElementType> = {
+  BookOpen, GraduationCap, Award, Zap, Crown,
+  Flame, Target, BookCheck, Sunrise, Moon,
+  Video, Sparkles, Star, Medal, Trophy
+};
 
 interface Achievement {
   id: string;
   title: string;
   description: string;
-  icon: React.ElementType;
-  progress: number;
-  maxProgress: number;
-  unlocked: boolean;
+  iconName: string;
+  points: number;
+  category: string;
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
-  xpReward: number;
+  requirement: any;
+}
+
+interface UserAchievement {
+  id?: string;
+  achievementId: string;
+  unlockedAt: any;
+  points: number;
 }
 
 const rarityGradients = {
@@ -46,79 +69,92 @@ const rarityLabels = {
   legendary: 'Legendary',
 };
 
-const achievements: Achievement[] = [
-  {
-    id: '1',
-    title: 'First Steps',
-    description: 'Complete your first lesson',
-    icon: BookOpen,
-    progress: 1,
-    maxProgress: 1,
-    unlocked: true,
-    rarity: 'common',
-    xpReward: 50,
-  },
-  {
-    id: '2',
-    title: 'Streak Master',
-    description: 'Maintain a 7-day learning streak',
-    icon: Flame,
-    progress: 5,
-    maxProgress: 7,
-    unlocked: false,
-    rarity: 'rare',
-    xpReward: 150,
-  },
-  {
-    id: '3',
-    title: 'Perfect Score',
-    description: 'Get 100% on any quiz',
-    icon: Target,
-    progress: 0,
-    maxProgress: 1,
-    unlocked: false,
-    rarity: 'rare',
-    xpReward: 100,
-  },
-  {
-    id: '4',
-    title: 'Vocabulary Guru',
-    description: 'Learn 100 new words',
-    icon: Zap,
-    progress: 45,
-    maxProgress: 100,
-    unlocked: false,
-    rarity: 'epic',
-    xpReward: 300,
-  },
-  {
-    id: '5',
-    title: 'Grammar Champion',
-    description: 'Complete all grammar modules',
-    icon: Crown,
-    progress: 2,
-    maxProgress: 6,
-    unlocked: false,
-    rarity: 'legendary',
-    xpReward: 500,
-  },
-  {
-    id: '6',
-    title: 'Quick Learner',
-    description: 'Complete 5 lessons in one day',
-    icon: Medal,
-    progress: 3,
-    maxProgress: 5,
-    unlocked: false,
-    rarity: 'epic',
-    xpReward: 200,
-  },
-];
-
 export function AchievementsWidget() {
   const navigate = useNavigate();
-  const unlockedCount = achievements.filter(a => a.unlocked).length;
-  const totalXP = achievements.filter(a => a.unlocked).reduce((acc, a) => acc + a.xpReward, 0);
+  const { user } = useAuth();
+  
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [userAchievements, setUserAchievements] = useState<UserAchievement[]>([]);
+  const [userProgress, setUserProgress] = useState<any>(null);  // ← 添加这个
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      if (!user) return;
+
+      try {
+        // Get all achievements
+        const achievementsSnap = await getDocs(collection(db, 'achievements'));
+        const achievementsData = achievementsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Achievement[];
+        
+        setAchievements(achievementsData);
+
+        // Get user achievements
+        const userAchSnap = await getDocs(
+          collection(db, 'users', user.uid, 'achievements')
+        );
+        const userAchData = userAchSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as UserAchievement[];
+        
+        setUserAchievements(userAchData);
+
+        // ✅ 获取用户进度
+        const progress = await getUserProgress(user.uid);
+        setUserProgress(progress);
+        console.log('📊 User progress loaded:', progress);
+
+      } catch (error) {
+        console.error('Error loading achievements:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [user]);
+
+  const isUnlocked = (achievementId: string) => {
+    const found = userAchievements.some(ua => 
+      ua.achievementId === achievementId || ua.id === achievementId
+    );
+    // Debug
+    if (found) {
+      console.log('✅ Unlocked:', achievementId);
+    }
+    return found;
+  };
+
+  // Show top 6 achievements
+  const displayAchievements = [...achievements]
+    .sort((a, b) => {
+      const aUnlocked = isUnlocked(a.id);
+      const bUnlocked = isUnlocked(b.id);
+      
+      if (aUnlocked && !bUnlocked) return -1;
+      if (!aUnlocked && bUnlocked) return 1;
+      
+      const rarityOrder = { legendary: 0, epic: 1, rare: 2, common: 3 };
+      return rarityOrder[a.rarity] - rarityOrder[b.rarity];
+    })
+    .slice(0, 6);
+
+  const unlockedCount = achievements.filter(a => isUnlocked(a.id)).length;
+  const totalXP = userAchievements.reduce((acc, ua) => acc + ua.points, 0);
+
+  if (loading) {
+    return (
+      <Card className="p-6">
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <motion.div
@@ -127,7 +163,6 @@ export function AchievementsWidget() {
       transition={{ delay: 0.5 }}
     >
       <Card className="p-6 overflow-hidden relative">
-        {/* Decorative elements */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-gradient-to-b from-amber-500/10 to-transparent rounded-full blur-3xl" />
         
         <div className="flex items-center justify-between mb-6 relative">
@@ -160,9 +195,21 @@ export function AchievementsWidget() {
 
         {/* Achievement Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 relative">
-          {achievements.map((achievement, index) => {
-            const Icon = achievement.icon;
-            const progressPercent = (achievement.progress / achievement.maxProgress) * 100;
+          {displayAchievements.map((achievement, index) => {
+            const IconComponent = iconMap[achievement.iconName] || Trophy;
+            const unlocked = isUnlocked(achievement.id);
+            
+            // ✅ 使用calculateAchievementProgress获取真实进度
+            let progress = { current: 0, total: 1 };
+            let progressPercent = 0;
+            
+            if (userProgress) {
+              progress = calculateAchievementProgress(achievement, userProgress);
+              progressPercent = progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
+              
+              // Debug
+              console.log(`📊 ${achievement.title}: ${progress.current}/${progress.total} (${Math.round(progressPercent)}%)`);
+            }
             
             return (
               <motion.div
@@ -171,30 +218,29 @@ export function AchievementsWidget() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.08 * index, type: 'spring', stiffness: 200 }}
                 whileHover={{ scale: 1.03, y: -2 }}
+                onClick={() => navigate('/achievements')}
                 className={`relative p-4 rounded-2xl border-2 transition-all duration-300 cursor-pointer ${
-                  achievement.unlocked 
+                  unlocked 
                     ? `bg-gradient-to-br from-card to-card/80 ${rarityBorder[achievement.rarity]} shadow-lg ${rarityGlow[achievement.rarity]}`
                     : 'bg-muted/20 border-muted/30 opacity-70'
                 }`}
               >
                 {/* Rarity label */}
                 <div className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
-                  achievement.unlocked 
+                  unlocked 
                     ? `bg-gradient-to-r ${rarityGradients[achievement.rarity]} text-white`
                     : 'bg-muted text-muted-foreground'
                 }`}>
                   {rarityLabels[achievement.rarity]}
                 </div>
 
-                {/* Lock icon for locked achievements */}
-                {!achievement.unlocked && (
+                {!unlocked && (
                   <div className="absolute top-2 right-2">
                     <Lock className="w-4 h-4 text-muted-foreground" />
                   </div>
                 )}
 
-                {/* Star for unlocked */}
-                {achievement.unlocked && (
+                {unlocked && (
                   <motion.div 
                     className="absolute top-2 right-2"
                     initial={{ scale: 0 }}
@@ -207,30 +253,27 @@ export function AchievementsWidget() {
                 
                 {/* Icon */}
                 <div className={`w-14 h-14 mx-auto mt-4 mb-3 rounded-2xl flex items-center justify-center ${
-                  achievement.unlocked 
+                  unlocked 
                     ? `bg-gradient-to-br ${rarityGradients[achievement.rarity]} shadow-lg ${rarityGlow[achievement.rarity]}` 
                     : 'bg-muted/50'
                 }`}>
-                  <Icon className={`w-7 h-7 ${achievement.unlocked ? 'text-white' : 'text-muted-foreground'}`} />
+                  <IconComponent className={`w-7 h-7 ${unlocked ? 'text-white' : 'text-muted-foreground'}`} />
                 </div>
                 
-                {/* Title */}
                 <h4 className={`text-sm font-semibold text-center mb-1 ${
-                  achievement.unlocked ? 'text-foreground' : 'text-muted-foreground'
+                  unlocked ? 'text-foreground' : 'text-muted-foreground'
                 }`}>
                   {achievement.title}
                 </h4>
                 
-                {/* Description */}
                 <p className="text-xs text-muted-foreground text-center mb-3 line-clamp-2 min-h-[2rem]">
                   {achievement.description}
                 </p>
 
-                {/* Progress or XP reward */}
-                {achievement.unlocked ? (
+                {unlocked ? (
                   <div className="flex items-center justify-center gap-1 text-xs font-medium text-amber-400">
                     <Star className="w-3 h-3 fill-amber-400" />
-                    +{achievement.xpReward} XP earned
+                    +{achievement.points} XP earned
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -239,8 +282,8 @@ export function AchievementsWidget() {
                       className="h-2 bg-muted/50"
                     />
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{achievement.progress}/{achievement.maxProgress}</span>
-                      <span className="text-amber-400/70">+{achievement.xpReward} XP</span>
+                      <span>{progress.current}/{progress.total}</span>
+                      <span className="text-amber-400/70">+{achievement.points} XP</span>
                     </div>
                   </div>
                 )}
@@ -251,7 +294,11 @@ export function AchievementsWidget() {
 
         {/* View all button */}
         <div className="mt-6 flex justify-center">
-          <Button variant="outline" className="gap-2" onClick={() => navigate('/achievements')}>
+          <Button 
+            variant="outline" 
+            className="gap-2" 
+            onClick={() => navigate('/achievements')}
+          >
             <Trophy className="w-4 h-4" />
             View All Achievements
           </Button>
