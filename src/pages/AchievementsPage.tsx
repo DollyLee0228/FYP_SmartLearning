@@ -1,6 +1,6 @@
-// AchievementsPage.tsx - 带真实进度版本
-// 1. 显示真实用户进度
-// 2. 已解锁的achievements显示不同
+// AchievementsPage.tsx - 修复版本
+// ✅ 使用Dashboard的gradient颜色
+// ✅ 真实progress计算
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
@@ -42,25 +42,46 @@ interface Achievement {
 }
 
 interface UserAchievement {
+  id?: string;
   achievementId: string;
   unlockedAt: any;
   points: number;
 }
 
-interface UserProgress {
-  lessonsCompleted: number;
-  perfectScores: number;
-  avgScore: number;
-  moduleProgress: Record<string, number>;
-  currentStreak: number;
-  videosWatched: number;
-}
+// ✅ 使用Dashboard的漂亮gradient颜色！
+const rarityGradients = {
+  common: 'from-slate-400 to-slate-600',
+  rare: 'from-blue-400 to-cyan-500',
+  epic: 'from-purple-400 to-pink-500',
+  legendary: 'from-amber-400 via-yellow-500 to-orange-500',
+};
 
-const rarityConfig = {
-  common: { label: 'COMMON', color: 'bg-gray-500/20 text-gray-600', border: 'border-gray-300' },
-  rare: { label: 'RARE', color: 'bg-blue-500/20 text-blue-600', border: 'border-blue-400' },
-  epic: { label: 'EPIC', color: 'bg-purple-500/20 text-purple-600', border: 'border-purple-400' },
-  legendary: { label: 'LEGENDARY', color: 'bg-yellow-500/20 text-yellow-600', border: 'border-yellow-400' },
+const rarityGlow = {
+  common: 'shadow-slate-500/20',
+  rare: 'shadow-blue-500/30',
+  epic: 'shadow-purple-500/40',
+  legendary: 'shadow-amber-500/50',
+};
+
+const rarityBorder = {
+  common: 'border-slate-500/30',
+  rare: 'border-blue-500/30',
+  epic: 'border-purple-500/30',
+  legendary: 'border-amber-500/30',
+};
+
+const rarityBadgeColors = {
+  common: 'bg-gradient-to-r from-slate-400 to-slate-600',
+  rare: 'bg-gradient-to-r from-blue-400 to-cyan-500',
+  epic: 'bg-gradient-to-r from-purple-400 to-pink-500',
+  legendary: 'bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500',
+};
+
+const rarityLabels = {
+  common: 'COMMON',
+  rare: 'RARE',
+  epic: 'EPIC',
+  legendary: 'LEGENDARY',
 };
 
 export default function AchievementsPage() {
@@ -69,7 +90,7 @@ export default function AchievementsPage() {
   
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [userAchievements, setUserAchievements] = useState<UserAchievement[]>([]);
-  const [userProgress, setUserProgress] = useState<UserProgress | null>(null);
+  const [userProgress, setUserProgress] = useState<any>(null);
   const [stats, setStats] = useState({ totalPoints: 0, achievementsUnlocked: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -102,10 +123,14 @@ export default function AchievementsPage() {
         const userAchSnap = await getDocs(
           collection(db, 'users', user.uid, 'achievements')
         );
-        const userAchData = userAchSnap.docs.map(doc => doc.data()) as UserAchievement[];
+        const userAchData = userAchSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as UserAchievement[];
+        
         setUserAchievements(userAchData);
 
-        // Get user progress
+        // ✅ Get user progress
         const progress = await getUserProgress(user.uid);
         setUserProgress(progress);
 
@@ -136,11 +161,15 @@ export default function AchievementsPage() {
   );
 
   const isUnlocked = (achievementId: string) => {
-    return userAchievements.some(ua => ua.achievementId === achievementId);
+    return userAchievements.some(ua => 
+      ua.achievementId === achievementId || ua.id === achievementId
+    );
   };
 
   const getUnlockDate = (achievementId: string) => {
-    const userAch = userAchievements.find(ua => ua.achievementId === achievementId);
+    const userAch = userAchievements.find(ua => 
+      ua.achievementId === achievementId || ua.id === achievementId
+    );
     if (userAch?.unlockedAt) {
       const date = new Date(userAch.unlockedAt.seconds * 1000);
       return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
@@ -190,7 +219,7 @@ export default function AchievementsPage() {
             
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-yellow-500 flex items-center justify-center">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/30">
                   <Trophy className="w-8 h-8 text-white" />
                 </div>
                 <div>
@@ -200,9 +229,9 @@ export default function AchievementsPage() {
               </div>
               
               <div className="text-right">
-                <div className="flex items-center gap-2 bg-yellow-50 px-4 py-2 rounded-full border-2 border-yellow-200">
-                  <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-                  <span className="text-xl font-bold text-yellow-600">{stats.totalPoints} XP</span>
+                <div className="flex items-center gap-2 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border-2 border-amber-500/20 px-4 py-2 rounded-full">
+                  <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
+                  <span className="text-xl font-bold text-amber-600">{stats.totalPoints} XP</span>
                 </div>
               </div>
             </div>
@@ -249,7 +278,7 @@ export default function AchievementsPage() {
               const date = getUnlockDate(ach.id);
               const progress = getProgress(ach);
               const IconComponent = iconMap[ach.iconName] || Star;
-              const rarity = rarityConfig[ach.rarity as keyof typeof rarityConfig] || rarityConfig.common;
+              const rarity = ach.rarity as keyof typeof rarityGradients;
               const progressPercent = progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
 
               return (
@@ -261,21 +290,21 @@ export default function AchievementsPage() {
                 >
                   <Card className={`
                     relative p-5 bg-white border-2 
-                    ${unlocked ? rarity.border + ' shadow-md' : 'border-gray-200 opacity-70'}
+                    ${unlocked ? `${rarityBorder[rarity]} shadow-lg ${rarityGlow[rarity]}` : 'border-gray-200 opacity-70'}
                     hover:shadow-lg transition-all duration-200
                     h-[320px] flex flex-col
                   `}>
-                    {/* Rarity Badge */}
+                    {/* Rarity Badge - 使用gradient! */}
                     <div className="absolute top-2 left-2">
-                      <Badge className={`text-xs font-semibold ${rarity.color}`}>
-                        {rarity.label}
+                      <Badge className={`text-xs font-semibold ${unlocked ? `${rarityBadgeColors[rarity]} text-white` : 'bg-gray-300 text-gray-600'}`}>
+                        {rarityLabels[rarity]}
                       </Badge>
                     </div>
 
-                    {/* Star/Lock/Check Icon */}
+                    {/* Check/Lock Icon */}
                     <div className="absolute top-2 right-2">
                       {unlocked ? (
-                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg">
                           <Check className="w-4 h-4 text-white" />
                         </div>
                       ) : (
@@ -283,12 +312,12 @@ export default function AchievementsPage() {
                       )}
                     </div>
 
-                    {/* Icon */}
+                    {/* Icon - 使用gradient background! */}
                     <div className={`
                       w-16 h-16 mx-auto mb-3 mt-4 rounded-2xl 
-                      ${unlocked ? ach.iconBg : 'bg-gray-300'} 
+                      ${unlocked ? `bg-gradient-to-br ${rarityGradients[rarity]} shadow-lg ${rarityGlow[rarity]}` : 'bg-gray-300'} 
                       ${!unlocked && 'grayscale opacity-50'}
-                      flex items-center justify-center shadow-lg
+                      flex items-center justify-center
                     `}>
                       <IconComponent className="w-8 h-8 text-white" />
                     </div>
@@ -323,9 +352,9 @@ export default function AchievementsPage() {
                       {/* XP */}
                       <div className={`
                         flex items-center justify-center gap-1 mt-auto
-                        ${unlocked ? 'text-emerald-600' : 'text-yellow-600'}
+                        ${unlocked ? 'text-emerald-600' : 'text-amber-600'}
                       `}>
-                        <Star className={`w-3.5 h-3.5 ${unlocked ? 'fill-emerald-500' : 'fill-yellow-500'}`} />
+                        <Star className={`w-3.5 h-3.5 ${unlocked ? 'fill-emerald-500' : 'fill-amber-500'}`} />
                         <span className="font-bold text-sm">
                           {unlocked ? `+${ach.points} XP earned` : `+${ach.points} XP`}
                         </span>
