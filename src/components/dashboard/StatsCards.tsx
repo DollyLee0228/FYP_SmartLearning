@@ -1,11 +1,106 @@
-import React from 'react';
+// StatsCards.tsx - 直接调用Firebase，不创建新文件
+// ✅ 不需要创建dashboardData.ts
+
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useLearning } from '@/context/LearningContext';
+import { useAuth } from '@/hooks/useAuth';
 import { LEVELS } from '@/types/learning';
-import { Flame, Trophy, BookOpen, Target, TrendingUp, Zap } from 'lucide-react';
+import { Flame, Trophy, BookOpen, Target, Zap } from 'lucide-react';
+import { getStreak } from '@/utils/streakTracking';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+
+// ✅ Level计算函数（直接写在这里）
+function calculateLevel(xp: number): { level: string; name: string } {
+  if (xp >= 12000) return { level: 'C2', name: 'Proficiency' };
+  if (xp >= 8000) return { level: 'C1', name: 'Advanced' };
+  if (xp >= 5000) return { level: 'B2', name: 'Upper Intermediate' };
+  if (xp >= 2500) return { level: 'B1', name: 'Intermediate' };
+  if (xp >= 1000) return { level: 'A2', name: 'Elementary' };
+  return { level: 'A1', name: 'Beginner' };
+}
 
 export function StatsCards() {
-  const { userProgress } = useLearning();
+  const { user } = useAuth();
+  
+  const [userProgress, setUserProgress] = useState({
+    streak: { current: 0, longest: 0 },
+    level: 'A1',
+    xp: 0,
+    completedLessons: 0,
+    totalLessons: 99
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      if (!user) return;
+
+      try {
+        setLoading(true);
+
+        // 1️⃣ 获取Streak
+        const streakData = await getStreak(user.uid);
+        
+        // 2️⃣ 获取Total XP
+        const statsRef = doc(db, 'users', user.uid, 'stats', 'overall');
+        const statsSnap = await getDoc(statsRef);
+        const totalXP = statsSnap.exists() ? (statsSnap.data().totalPoints || 0) : 0;
+        
+        // 3️⃣ 获取Completed Lessons
+        const progressRef = doc(db, 'userProgress', user.uid);
+        const progressSnap = await getDoc(progressRef);
+        const lessonsDone = progressSnap.exists() 
+          ? (progressSnap.data().completedLessons?.length || 0) 
+          : 0;
+        
+        // 4️⃣ 获取Total Lessons
+        const lessonsSnap = await getDocs(collection(db, 'lessons'));
+        const totalLessons = lessonsSnap.size;
+        
+        // 5️⃣ 计算Level
+        const levelData = calculateLevel(totalXP);
+        
+        // 6️⃣ 更新state
+        setUserProgress({
+          streak: {
+            current: streakData.currentStreak,
+            longest: streakData.longestStreak
+          },
+          level: levelData.level,
+          xp: totalXP,
+          completedLessons: lessonsDone,
+          totalLessons: totalLessons
+        });
+
+        console.log('📊 Stats loaded:', {
+          streak: streakData.currentStreak,
+          level: levelData.level,
+          xp: totalXP,
+          lessons: `${lessonsDone}/${totalLessons}`
+        });
+
+      } catch (error) {
+        console.error('Error loading stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="stat-card animate-pulse">
+            <div className="h-20 bg-secondary/50 rounded"></div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (!userProgress) return null;
 

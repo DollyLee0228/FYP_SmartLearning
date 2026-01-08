@@ -1,6 +1,8 @@
-import React from 'react';
+// DashboardSidebar.tsx - 直接调用Firebase
+// ✅ 不需要创建新文件
+
+import React, { useState, useEffect } from 'react';
 import { NavLink } from '@/components/NavLink';
-import { useLearning } from '@/context/LearningContext';
 import { LEVELS } from '@/types/learning';
 import {
   Sidebar,
@@ -32,6 +34,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
+import { getStreak } from '@/utils/streakTracking';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 const mainNavItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
@@ -53,13 +58,63 @@ const bottomNavItems = [
   { title: 'Settings', url: '/settings', icon: Settings },
 ];
 
+// ✅ Level计算函数
+function calculateLevel(xp: number): string {
+  if (xp >= 12000) return 'C2';
+  if (xp >= 8000) return 'C1';
+  if (xp >= 5000) return 'B2';
+  if (xp >= 2500) return 'B1';
+  if (xp >= 1000) return 'A2';
+  return 'A1';
+}
+
 export function DashboardSidebar() {
   const { state } = useSidebar();
-  const { userProgress, resetProgress } = useLearning();
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const collapsed = state === 'collapsed';
-  const levelInfo = userProgress ? LEVELS[userProgress.level] : null;
+
+  // ✅ 使用state代替context
+  const [userProgress, setUserProgress] = useState({
+    level: 'A1',
+    xp: 0,
+    streak: { current: 0 }
+  });
+
+  // ✅ 从Firebase加载数据
+  useEffect(() => {
+    async function fetchData() {
+      if (!user) return;
+
+      try {
+        // 1️⃣ 获取Streak
+        const streakData = await getStreak(user.uid);
+        
+        // 2️⃣ 获取XP
+        const statsRef = doc(db, 'users', user.uid, 'stats', 'overall');
+        const statsSnap = await getDoc(statsRef);
+        const totalXP = statsSnap.exists() ? (statsSnap.data().totalPoints || 0) : 0;
+        
+        // 3️⃣ 计算Level
+        const level = calculateLevel(totalXP);
+        
+        // 4️⃣ 更新state
+        setUserProgress({
+          level,
+          xp: totalXP,
+          streak: { current: streakData.currentStreak }
+        });
+
+        console.log('👤 Sidebar data loaded:', { level, xp: totalXP, streak: streakData.currentStreak });
+      } catch (error) {
+        console.error('Error loading sidebar data:', error);
+      }
+    }
+
+    fetchData();
+  }, [user]);
+
+  const levelInfo = LEVELS[userProgress.level];
 
   const handleSignOut = async () => {
     await signOut();
@@ -84,7 +139,7 @@ export function DashboardSidebar() {
 
       <SidebarContent className="py-4">
         {/* User Level Badge */}
-        {userProgress && !collapsed && (
+        {!collapsed && (
           <div className="px-4 mb-4">
             <div className="glass-card p-3 space-y-2">
               <div className="flex items-center justify-between">
