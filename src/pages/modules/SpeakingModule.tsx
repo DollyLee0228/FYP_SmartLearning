@@ -98,7 +98,7 @@ export default function SpeakingModule() {
             setCompletedLessons(progressData.completedLessons || []);
             console.log('✅ Initial completed lessons:', progressData.completedLessons);
           }
-        }
+        } 
 
       } catch (error: any) {
         console.error('❌ Error fetching data:', error);

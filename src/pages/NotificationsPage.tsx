@@ -1,10 +1,5 @@
-// NotificationsPage.tsx - Firebase连接版本
-// ✅ 从Firebase读取通知
-// ✅ 支持动态添加节日祝福等消息
-// TRY AGAIN
-
-import React, { useState, useEffect } from 'react';
-import { Bell, Gift, Info, MessageCircle, Check, CheckCheck, ArrowLeft, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Bell, Gift, Info, MessageCircle, Check, CheckCheck, ArrowLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
