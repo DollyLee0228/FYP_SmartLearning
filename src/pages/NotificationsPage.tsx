@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
-import { Bell, Gift, Info, MessageCircle, Check, CheckCheck, ArrowLeft, X } from 'lucide-react';
+// NotificationsPage.tsx - Firebase连接版本
+// ✅ 从Firebase读取通知
+// ✅ 支持动态添加节日祝福等消息
+// TRY AGAIN
+
+import React, { useState, useEffect } from 'react';
+import { Bell, Gift, Info, MessageCircle, Check, CheckCheck, ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useAuth } from '@/hooks/useAuth';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 interface Notification {
   id: string;
@@ -18,7 +26,9 @@ interface Notification {
   title: string;
   content: string;
   time: string;
+  timestamp: any; // Firestore Timestamp
   read: boolean;
+  userId?: string; // 如果是针对特定用户的通知
 }
 
 const typeIcons = {
@@ -42,62 +52,72 @@ const typeLabels = {
   reminder: 'Reminder',
 };
 
-const initialNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'reward',
-    title: 'Daily Reward Available!',
-    content: 'Claim your daily bonus of 50 XP and keep your streak going strong!',
-    time: '2 min ago',
-    read: false,
-  },
-  {
-    id: '2',
-    type: 'announcement',
-    title: 'New Grammar Lessons Added',
-    content: 'Check out our new advanced grammar lessons covering complex sentence structures and advanced tenses.',
-    time: '1 hour ago',
-    read: false,
-  },
-  {
-    id: '3',
-    type: 'tip',
-    title: 'Learning Tip of the Day',
-    content: 'Practice speaking out loud for better pronunciation! Recording yourself can help identify areas for improvement.',
-    time: '3 hours ago',
-    read: true,
-  },
-  {
-    id: '4',
-    type: 'reminder',
-    title: 'Continue Your Lesson',
-    content: 'You were halfway through "Present Perfect Tense". Continue where you left off to maintain your progress.',
-    time: 'Yesterday',
-    read: true,
-  },
-  {
-    id: '5',
-    type: 'announcement',
-    title: 'Platform Update',
-    content: 'We have updated our speaking module with new AI-powered pronunciation feedback.',
-    time: '2 days ago',
-    read: true,
-  },
-  {
-    id: '6',
-    type: 'reward',
-    title: '7-Day Streak Achievement!',
-    content: 'Congratulations! You have maintained a 7-day learning streak. Keep it up!',
-    time: '3 days ago',
-    read: true,
-  },
-];
-
 export default function NotificationsPage() {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+
+  // ✅ 从Firebase加载通知
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
+    // 查询用户的通知
+    const notificationsRef = collection(db, 'users', user.uid, 'notifications');
+    const q = query(notificationsRef, orderBy('timestamp', 'desc'));
+
+    // 实时监听通知
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const notifs: Notification[] = [];
+      
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        
+        // 计算时间差
+        const timestamp = data.timestamp?.toDate();
+        const timeAgo = timestamp ? getTimeAgo(timestamp) : 'Unknown';
+        
+        notifs.push({
+          id: doc.id,
+          type: data.type || 'announcement',
+          title: data.title || 'Notification',
+          content: data.content || '',
+          time: timeAgo,
+          timestamp: data.timestamp,
+          read: data.read || false,
+          userId: data.userId,
+        });
+      });
+      
+      setNotifications(notifs);
+      setLoading(false);
+      
+      console.log('📬 Loaded notifications:', notifs.length);
+    });
+
+    return () => unsubscribe();
+  }, [user, navigate]);
+
+  // ✅ 计算时间差
+  const getTimeAgo = (date: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return date.toLocaleDateString();
+  };
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -107,20 +127,65 @@ export default function NotificationsPage() {
     return n.type === activeTab;
   });
 
-  const markAsRead = (id: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    );
+  // ✅ 标记为已读
+  const markAsRead = async (id: string) => {
+    if (!user) return;
+    
+    try {
+      const notifRef = doc(db, 'users', user.uid, 'notifications', id);
+      await updateDoc(notifRef, { read: true });
+      
+      // 本地更新
+      setNotifications(prev =>
+        prev.map(n => (n.id === id ? { ...n, read: true } : n))
+      );
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  // ✅ 全部标记为已读
+  const markAllAsRead = async () => {
+    if (!user) return;
+    
+    try {
+      const batch = writeBatch(db);
+      
+      notifications.forEach(notif => {
+        if (!notif.read) {
+          const notifRef = doc(db, 'users', user.uid, 'notifications', notif.id);
+          batch.update(notifRef, { read: true });
+        }
+      });
+      
+      await batch.commit();
+      
+      // 本地更新
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      
+      console.log('✅ All notifications marked as read');
+    } catch (error) {
+      console.error('Error marking all as read:', error);
+    }
   };
 
   const openNotification = (notification: Notification) => {
     setSelectedNotification(notification);
-    markAsRead(notification.id);
+    if (!notification.read) {
+      markAsRead(notification.id);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading notifications...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
