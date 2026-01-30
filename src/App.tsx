@@ -17,9 +17,9 @@ import SpeakingModule from "./pages/modules/SpeakingModule";
 import LessonPage from "./pages/LessonPage";
 // import ReadingExercisePage from "./pages/modules/ReadingExercisePage";
 // import ReadingLessonPage from './pages/modules/ReadingLessonPage';
-import WritingExercisePage from "./pages/modules/WritingExercisePage";
-import SpeakingExercisePage from "./pages/modules/SpeakingExercisePage";
-import ListeningExercisePage from "./pages/modules/ListeningExercisePage";
+// import WritingExercisePage from "./pages/modules/WritingExercisePage";
+// import SpeakingExercisePage from "./pages/modules/SpeakingExercisePage";
+// import ListeningExercisePage from "./pages/modules/ListeningExercisePage";
 import VideosPage from "./pages/VideosPage";
 import RecommendationsPage from "./pages/RecommendationsPage";
 import AchievementsPage from "./pages/AchievementsPage";
@@ -55,9 +55,9 @@ function App() {
               <Route path="/lesson/:moduleId/:lessonId" element={<LessonPage />} />
               {/* <Route path="/exercises/reading/:exerciseId" element={<ReadingExercisePage />} /> */}
               {/* <Route path="/lesson/reading/:lessonId" element={<ReadingLessonPage />} /> */}
-              <Route path="/exercises/writing/:exerciseId" element={<WritingExercisePage />} />
-              <Route path="/exercises/speaking/:exerciseId" element={<SpeakingExercisePage />} />
-              <Route path="/exercises/listening/:exerciseId" element={<ListeningExercisePage />} />
+              {/* <Route path="/exercises/writing/:exerciseId" element={<WritingExercisePage />} /> */}
+              {/* <Route path="/exercises/speaking/:exerciseId" element={<SpeakingExercisePage />} /> */}
+              {/* <Route path="/exercises/listening/:exerciseId" element={<ListeningExercisePage />} /> */}
               <Route path="/videos" element={<VideosPage />} />
               <Route path="/recommendations" element={<RecommendationsPage />} />
               <Route path="/achievements" element={<AchievementsPage />} />
