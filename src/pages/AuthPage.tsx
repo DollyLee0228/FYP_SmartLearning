@@ -93,7 +93,7 @@ export default function AuthPage() {
       // Update user profile with assessment data
       const userRef = doc(db, 'users', userId);
       await setDoc(userRef, {
-        level: quizData.level,
+        quizLevel: quizData.level,
         assessmentCompleted: true,
         assessmentScore: quizData.score,
         assessmentDate: serverTimestamp(),
@@ -122,7 +122,6 @@ export default function AuthPage() {
         email,
         displayName,
         role,
-        level: 'A1',
         assessmentCompleted: false,
         learningGoalsCompleted: false, // ✅ 添加这个字段
         createdAt: serverTimestamp(),
