@@ -1,3 +1,6 @@
+// AuthPage.tsx - 修复版
+// ✅ 登录后检查learningGoalsCompleted，决定跳转到Learning Goals或Dashboard
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -121,6 +124,7 @@ export default function AuthPage() {
         role,
         level: 'A1',
         assessmentCompleted: false,
+        learningGoalsCompleted: false, // ✅ 添加这个字段
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -131,79 +135,51 @@ export default function AuthPage() {
     }
   };
 
-    const checkUserRoleAndRedirect = async (userId: string) => {
+  // ✅ 修复的核心函数
+  const checkUserRoleAndRedirect = async (userId: string) => {
     try {
-      // Check if there's pending quiz data to save
-      const pendingLevel = localStorage.getItem('smartlearning_pending_level');
-      const pendingScore = localStorage.getItem('smartlearning_pending_score');
-      const pendingTotal = localStorage.getItem('smartlearning_pending_total');
-      const pendingTime = localStorage.getItem('smartlearning_pending_time');
-      const pendingAnswers = localStorage.getItem('smartlearning_pending_answers');
-
-      // If we have pending quiz data, save it now
-    if (pendingLevel && pendingScore) {
-      console.log('Found pending quiz data, saving to Firestore...');
+      console.log('🔍 Checking user status for:', userId);
       
-      const quizData = {
-        level: pendingLevel,
-        score: parseInt(pendingScore),
-        totalQuestions: pendingTotal ? parseInt(pendingTotal) : 30,
-        timeTaken: pendingTime ? parseInt(pendingTime) : 0,
-        answers: pendingAnswers ? JSON.parse(pendingAnswers) : []
-      };
-
-      try {
-        // Save quiz results to Firestore
-        await saveQuizResultsToFirestore(userId, quizData);
-        
-        // Clear pending data from localStorage
-        localStorage.removeItem('smartlearning_pending_level');
-        localStorage.removeItem('smartlearning_pending_score');
-        localStorage.removeItem('smartlearning_pending_total');
-        localStorage.removeItem('smartlearning_pending_time');
-        localStorage.removeItem('smartlearning_pending_answers');
-        
-        // Mark assessment as completed
-        localStorage.setItem('smartlearning_assessment', 'completed');
-        
-        console.log('Quiz results saved successfully!');
-        toast.success('Your quiz results have been saved!');
-        
-        // Navigate to dashboard
-        navigate('/dashboard', { replace: true });
-        return;
-      } catch (error) {
-        console.error('Error saving quiz results:', error);
-        toast.error('Failed to save quiz results');
-      }
-    }
-
-    // No pending quiz data, check user's current status
-    const userRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userRef);
-    
-    if (userDoc.exists()) {
-      const userData = userDoc.data();
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
       
-      if (userData.role === 'admin') {
+      // Admin check
+      if (userDoc.exists() && userDoc.data()?.role === 'admin') {
+        console.log('✅ Admin user, redirecting to /admin');
         navigate('/admin', { replace: true });
         return;
       }
       
-      const hasCompletedAssessment = 
-        localStorage.getItem('smartlearning_assessment') === 'completed' ||
-        userData.assessmentCompleted === true;
+      // ✅ 检查是否完成了learning goals
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const learningGoalsCompleted = userData.learningGoalsCompleted || false;
+        
+        console.log('📊 User status:', {
+          learningGoalsCompleted,
+          assessmentCompleted: userData.assessmentCompleted
+        });
+        
+        if (learningGoalsCompleted) {
+          // 已完成learning goals → Dashboard
+          console.log('✅ Learning goals completed, redirecting to /dashboard');
+          navigate('/dashboard', { replace: true });
+        } else {
+          // 未完成learning goals → Learning Goals Page
+          console.log('⏳ Learning goals not completed, redirecting to /learning-goals');
+          navigate('/learning-goals', { replace: true });
+        }
+      } else {
+        // 新用户，没有profile → Learning Goals Page
+        console.log('🆕 New user without profile, redirecting to /learning-goals');
+        navigate('/learning-goals', { replace: true });
+      }
       
-      navigate(hasCompletedAssessment ? '/dashboard' : '/quiz', { replace: true });
-    } else {
-      navigate('/quiz', { replace: true });
+    } catch (error) {
+      console.error('Error checking user role:', error);
+      // 发生错误，默认跳转到learning goals
+      navigate('/learning-goals', { replace: true });
     }
-  } catch (error) {
-    console.error('Error checking user role:', error);
-    const hasCompletedAssessment = 
-      localStorage.getItem('smartlearning_assessment') === 'completed';
-    navigate(hasCompletedAssessment ? '/dashboard' : '/quiz', { replace: true });
-  }
   };
 
   const validateInputs = (): boolean => {
@@ -228,7 +204,10 @@ export default function AuthPage() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       toast.success('Signed in successfully!');
+      
+      // ✅ 登录成功后检查并跳转
       await checkUserRoleAndRedirect(userCredential.user.uid);
+      
     } catch (error: any) {
       console.error('Sign in error:', error);
       if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
@@ -266,22 +245,16 @@ export default function AuthPage() {
       // Save quiz results if pending
       if (pendingQuizData) {
         await saveQuizResultsToFirestore(user.uid, pendingQuizData);
-
-        // Clear pending data
-        localStorage.removeItem('smartlearning_pending_level');
-        localStorage.removeItem('smartlearning_pending_score');
-        localStorage.removeItem('smartlearning_pending_total');
-        localStorage.removeItem('smartlearning_pending_time');
-        localStorage.removeItem('smartlearning_pending_answers');
-        localStorage.setItem('smartlearning_assessment', 'completed');
         
-        toast.success('Account created! Your quiz results have been saved.');
-        navigate('/dashboard');
-      } else {
-        localStorage.removeItem('smartlearning_assessment');
-        toast.success('Account created! Please complete the assessment to get started.');
-        navigate('/quiz');
+        // Don't clear localStorage yet, let LearningGoalsPage handle it
+        console.log('✅ Quiz results saved, quiz data will be used in Learning Goals Page');
       }
+      
+      toast.success('Account created successfully!');
+      
+      // ✅ 注册成功后，新用户一定跳转到Learning Goals Page
+      navigate('/learning-goals', { replace: true });
+      
     } catch (error: any) {
       console.error('Sign up error:', error);
       if (error.code === 'auth/email-already-in-use') {
@@ -306,26 +279,27 @@ export default function AuthPage() {
       const userDoc = await getDoc(userRef);
 
       if (!userDoc.exists()) {
+        // 新用户，创建profile
         await createUserProfile(
           user.uid, 
           user.email || '', 
           user.displayName || 'User'
         );
+        
+        // Save quiz results if pending
+        if (pendingQuizData) {
+          await saveQuizResultsToFirestore(user.uid, pendingQuizData);
+        }
+        
+        // 新用户 → Learning Goals Page
+        toast.success('Welcome! Please select your learning goals.');
+        navigate('/learning-goals', { replace: true });
+      } else {
+        // 老用户，检查并跳转
+        toast.success('Signed in with Google successfully!');
+        await checkUserRoleAndRedirect(user.uid);
       }
-
-      // Save quiz results if pending
-      if (pendingQuizData) {
-        await saveQuizResultsToFirestore(user.uid, pendingQuizData);
-        localStorage.removeItem('smartlearning_pending_level');
-        localStorage.removeItem('smartlearning_pending_score');
-        localStorage.removeItem('smartlearning_pending_total');
-        localStorage.removeItem('smartlearning_pending_time');
-        localStorage.removeItem('smartlearning_pending_answers');
-        localStorage.setItem('smartlearning_assessment', 'completed');
-      }
-
-      toast.success('Signed in with Google successfully!');
-      await checkUserRoleAndRedirect(user.uid);
+      
     } catch (error: any) {
       console.error('Google sign in error:', error);
       toast.error(error.message || 'Failed to sign in with Google');
