@@ -19,7 +19,8 @@ The application includes level assessment, learning modules, streak tracking, an
 
 ## How to Run the Project
 
-### 1. Install dependencies
-```bash
-npm install
+cd python_backend
+venv\Scripts\activate
+python app.py
+npm run dev
 
