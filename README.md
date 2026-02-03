@@ -20,7 +20,10 @@ The application includes level assessment, learning modules, streak tracking, an
 ## How to Run the Project
 
 cd python_backend
+
 venv\Scripts\activate
+
 python app.py
+
 npm run dev
 
