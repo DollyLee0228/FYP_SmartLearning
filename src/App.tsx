@@ -19,7 +19,7 @@ import VideosPage from "./pages/VideosPage";
 import RecommendationsPage from "./pages/RecommendationsPage";
 import AchievementsPage from "./pages/AchievementsPage";
 import SettingsPage from "./pages/SettingsPage";
-import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminDashboard from '@/pages/admin/AdminDashboard';
 import NotFound from "./pages/NotFound";
 import ImportLesson from "./pages/importLessons";
 

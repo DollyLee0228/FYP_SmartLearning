@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -31,10 +31,11 @@ import {
   X,
   Loader2
 } from 'lucide-react';
-import { toast } from 'sonner';
-import { QuestionBuilder, Question } from './QuestionBuilder';
-import { VocabularyBuilder, VocabularyItem } from './VocabularyBuilder';
-import { GrammarBuilder, GrammarRule } from './GrammarBuilder';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp, setDoc, getDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from '@/config/firebase';
+import { getAuth } from 'firebase/auth';
+import { LessonBuilder } from './LessonBuilder';
 
 interface ContentItem {
   id: string;
@@ -43,14 +44,15 @@ interface ContentItem {
   level: string;
   category: string;
   status: string;
-  description?: string | null;
-  file_url?: string | null;
-  file_name?: string | null;
-  youtube_url?: string | null;
-  questions?: string | null;
-  passage?: string | null;
-  created_at: string;
-  updated_at: string;
+  description?: string;
+  fileUrl?: string;
+  fileName?: string;
+  youtubeUrl?: string;
+  questions?: string;
+  passage?: string;
+  createdAt: any;
+  updatedAt: any;
+  createdBy?: string;
 }
 
 const typeIcons: Record<string, React.ReactNode> = {
@@ -70,103 +72,6 @@ const statusColors: Record<string, string> = {
   draft: 'bg-yellow-500/20 text-yellow-400',
 };
 
-// Category-specific field configurations
-type CategoryConfig = { 
-  showAudio: boolean; 
-  showPassage: boolean; 
-  showQuestions: boolean; 
-  showVideoUpload: boolean;
-  showYoutubeUrl: boolean;
-  showGrammarBuilder: boolean;
-  showVocabularyBuilder: boolean;
-  showListeningModeSelector: boolean;
-  audioLabel?: string;
-  passageLabel?: string;
-  questionsLabel?: string;
-  questionPlaceholder?: string;
-  showOptions?: boolean;
-};
-
-const categoryFieldConfig: Record<string, CategoryConfig> = {
-  Grammar: { 
-    showAudio: false, 
-    showPassage: false, 
-    showQuestions: true, 
-    showVideoUpload: false, 
-    showYoutubeUrl: false, 
-    showGrammarBuilder: true,
-    showVocabularyBuilder: false,
-    showListeningModeSelector: false,
-    questionsLabel: 'Grammar Questions (Multiple Choice)',
-    questionPlaceholder: 'Choose the correct form of the verb...',
-    showOptions: true
-  },
-  Vocabulary: { 
-    showAudio: false, 
-    showPassage: false, 
-    showQuestions: false, 
-    showVideoUpload: false, 
-    showYoutubeUrl: false, 
-    showGrammarBuilder: false,
-    showVocabularyBuilder: true,
-    showListeningModeSelector: false
-  },
-  Reading: { 
-    showAudio: false, 
-    showPassage: true, 
-    showQuestions: true, 
-    showVideoUpload: false, 
-    showYoutubeUrl: false, 
-    showGrammarBuilder: false,
-    showVocabularyBuilder: false,
-    showListeningModeSelector: false,
-    passageLabel: 'Reading Passage / Article',
-    questionsLabel: 'Comprehension Questions',
-    questionPlaceholder: 'What is the main idea of the passage?',
-    showOptions: true
-  },
-  Listening: { 
-    showAudio: true, 
-    showPassage: false, 
-    showQuestions: true, 
-    showVideoUpload: false, 
-    showYoutubeUrl: true, 
-    showGrammarBuilder: false,
-    showVocabularyBuilder: false,
-    showListeningModeSelector: true,
-    audioLabel: 'Upload Audio File',
-    questionsLabel: 'Listening Questions',
-    questionPlaceholder: 'What did the speaker say about...?',
-    showOptions: true
-  },
-  Writing: { 
-    showAudio: false, 
-    showPassage: false, 
-    showQuestions: true, 
-    showVideoUpload: false, 
-    showYoutubeUrl: false, 
-    showGrammarBuilder: false,
-    showVocabularyBuilder: false,
-    showListeningModeSelector: false,
-    questionsLabel: 'Writing Prompts',
-    questionPlaceholder: 'Write an essay about...',
-    showOptions: false
-  },
-  Speaking: { 
-    showAudio: false, 
-    showPassage: false, 
-    showQuestions: true, 
-    showVideoUpload: false, 
-    showYoutubeUrl: false, 
-    showGrammarBuilder: false,
-    showVocabularyBuilder: false,
-    showListeningModeSelector: false,
-    questionsLabel: 'Speaking Prompts',
-    questionPlaceholder: 'Describe a time when you...',
-    showOptions: false
-  },
-};
-
 export function ContentManagement() {
   const [content, setContent] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,6 +82,7 @@ export function ContentManagement() {
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Form state
@@ -186,35 +92,118 @@ export function ContentManagement() {
     level: 'A1',
     category: 'Grammar',
     description: '',
-    youtube_url: '',
-    passage: ''
+    youtubeUrl: '',
+    passage: '',
+    questions: '',
+    status: 'draft' as 'draft' | 'published',
+    // Video specific fields
+    duration: '',
+    tags: [] as string[],
+    tagInput: ''
   });
 
-  // Builder states
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [vocabularyItems, setVocabularyItems] = useState<VocabularyItem[]>([]);
-  
-  // Listening mode: 'single' = one question per audio, 'multiple' = many questions per audio
-  const [listeningMode, setListeningMode] = useState<'single' | 'multiple'>('multiple');
-  const [grammarRules, setGrammarRules] = useState<GrammarRule[]>([]);
+  // Lesson builder state
+  const [lessonData, setLessonData] = useState({
+    introduction: {
+      title: '',
+      subtitle: '',
+      summary: ''
+    },
+    sections: [] as any[],
+    exercises: [] as any[]
+  });
 
-  // Fetch content from database
+  // Fetch content from Firebase
   useEffect(() => {
     fetchContent();
   }, []);
 
   const fetchContent = async () => {
     try {
-      const { data, error } = await supabase
-        .from('admin_content')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setContent(data || []);
+      setLoading(true);
+      setError(null);
+      console.log('🔍 Starting to fetch content...');
+      
+      // 1. Fetch from adminContent (Quiz type)
+      console.log('📊 Querying adminContent collection...');
+      const contentRef = collection(db, 'adminContent');
+      const contentQuery = query(contentRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(contentQuery);
+      
+      console.log(`✅ Found ${snapshot.docs.length} items in adminContent`);
+      
+      const adminContentData: ContentItem[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as ContentItem));
+      
+      // 2. Fetch from lessonContent
+      console.log('📊 Querying lessonContent collection...');
+      const lessonsRef = collection(db, 'lessonContent');
+      const lessonsSnapshot = await getDocs(lessonsRef);
+      
+      console.log(`✅ Found ${lessonsSnapshot.docs.length} lessons`);
+      
+      // Convert lessons to ContentItem format
+      const lessonsData: ContentItem[] = lessonsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Capitalize category (moduleId is lowercase in Firebase)
+        const category = data.moduleId 
+          ? data.moduleId.charAt(0).toUpperCase() + data.moduleId.slice(1)
+          : 'General';
+        
+        return {
+          id: doc.id,
+          title: data.introduction?.title || 'Untitled Lesson',
+          type: 'lesson',
+          level: data.level ? data.level.toUpperCase() : 'A1',
+          category: category,
+          status: 'published', // Lessons don't have status in Firebase, default to published
+          description: data.introduction?.summary,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        } as ContentItem;
+      });
+      
+      // 3. Fetch from videos collection
+      console.log('📊 Querying videos collection...');
+      const videosRef = collection(db, 'videos');
+      const videosQuery = query(videosRef, orderBy('uploadedAt', 'desc'));
+      const videosSnapshot = await getDocs(videosQuery);
+      
+      console.log(`✅ Found ${videosSnapshot.docs.length} videos`);
+      
+      // Convert videos to ContentItem format
+      const videosData: ContentItem[] = videosSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          title: data.title || 'Untitled Video',
+          type: 'video',
+          level: data.level || 'A1',
+          category: data.category || 'General',
+          status: 'published',
+          description: data.description,
+          youtubeUrl: data.videoUrl,
+          createdAt: data.uploadedAt,
+          updatedAt: data.uploadedAt
+        } as ContentItem;
+      });
+      
+      // Combine all sources
+      const allContent = [...adminContentData, ...lessonsData, ...videosData];
+      
+      console.log('✅ Total content loaded:', allContent.length);
+      console.log('  - Admin Content:', adminContentData.length);
+      console.log('  - Lessons:', lessonsData.length);
+      console.log('  - Videos:', videosData.length);
+      
+      setContent(allContent);
     } catch (error) {
-      console.error('Error fetching content:', error);
-      toast.error('Failed to load content');
+      console.error('❌ Error fetching content:', error);
+      const errorMessage = (error as Error).message || 'Unknown error';
+      setError(errorMessage);
+      alert('Failed to load content: ' + errorMessage);
     } finally {
       setLoading(false);
     }
@@ -229,19 +218,17 @@ export function ContentManagement() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const categoryConfig = categoryFieldConfig[newContent.category] || categoryFieldConfig['Grammar'];
-      
-      // Validate file type based on category
-      if (categoryConfig.showAudio) {
-        const validAudioTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/m4a'];
-        if (!validAudioTypes.includes(file.type)) {
-          toast.error('Please upload a valid audio file (MP3, WAV, OGG, M4A)');
-          return;
-        }
-      } else if (newContent.type === 'video') {
+      // Validate file type
+      if (newContent.type === 'video') {
         const validVideoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
         if (!validVideoTypes.includes(file.type)) {
-          toast.error('Please upload a valid video file (MP4, WebM, OGG, MOV)');
+          alert('Please upload a valid video file (MP4, WebM, OGG, MOV)');
+          return;
+        }
+      } else {
+        const validDocTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        if (!validDocTypes.includes(file.type)) {
+          alert('Please upload a valid document (PDF, DOC, DOCX)');
           return;
         }
       }
@@ -250,213 +237,442 @@ export function ContentManagement() {
   };
 
   const uploadFile = async (file: File): Promise<{ url: string; name: string } | null> => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const filePath = `${newContent.type}s/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('admin-content')
-      .upload(filePath, file);
-
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      throw uploadError;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `${newContent.type}s/${fileName}`;
+      
+      const storageRef = ref(storage, filePath);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      
+      console.log('✅ File uploaded:', url);
+      return { url, name: file.name };
+    } catch (error) {
+      console.error('❌ Upload error:', error);
+      throw error;
     }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('admin-content')
-      .getPublicUrl(filePath);
-
-    return { url: publicUrl, name: file.name };
   };
 
   const handleAddContent = async () => {
     if (!newContent.title) {
-      toast.error('Please enter a title');
-      return;
-    }
-
-    const categoryConfig = categoryFieldConfig[newContent.category] || categoryFieldConfig['Grammar'];
-    
-    // Validate based on category
-    // For listening with 'multiple' mode, require shared audio; for 'single' mode, each question has its own audio
-    if (categoryConfig.showAudio && listeningMode === 'multiple' && !selectedFile && !newContent.youtube_url) {
-      toast.error('Please upload an audio file or provide a link');
-      return;
-    }
-    
-    if (categoryConfig.showQuestions && questions.length === 0) {
-      toast.error('Please add at least one question/prompt');
-      return;
-    }
-    
-    if (categoryConfig.showPassage && !newContent.passage.trim()) {
-      toast.error('Please enter the reading passage');
-      return;
-    }
-
-    if (categoryConfig.showGrammarBuilder && grammarRules.length === 0) {
-      toast.error('Please add at least one grammar rule');
-      return;
-    }
-
-    if (categoryConfig.showVocabularyBuilder && vocabularyItems.length === 0) {
-      toast.error('Please add at least one vocabulary word');
+      alert('Please enter a title');
       return;
     }
 
     setUploading(true);
     try {
-      let fileData: { url: string; name: string } | null = null;
+      const auth = getAuth();
+      const user = auth.currentUser;
 
-      if (selectedFile) {
-        fileData = await uploadFile(selectedFile);
-      }
-
-      const { data: userData } = await supabase.auth.getUser();
-
-      // Serialize the appropriate data based on category
-      let questionsData: string | null = null;
-      if (categoryConfig.showQuestions) {
-        // For listening, include the mode in the data
-        if (categoryConfig.showListeningModeSelector) {
-          questionsData = JSON.stringify({ mode: listeningMode, questions });
-        } else {
-          questionsData = JSON.stringify(questions);
+      // Handle Lesson type - save to lessonContent collection
+      if (newContent.type === 'lesson') {
+        // Validation for lesson
+        if (!lessonData.introduction.title) {
+          alert('Please fill in the Introduction title');
+          setUploading(false);
+          return;
         }
-      } else if (categoryConfig.showGrammarBuilder) {
-        questionsData = JSON.stringify({ grammarRules, questions });
-      } else if (categoryConfig.showVocabularyBuilder) {
-        questionsData = JSON.stringify(vocabularyItems);
-      }
+        if (lessonData.sections.length === 0) {
+          alert('Please add at least one section');
+          setUploading(false);
+          return;
+        }
+        if (lessonData.exercises.length === 0) {
+          alert('Please add at least one exercise');
+          setUploading(false);
+          return;
+        }
 
-      const { error } = await supabase
-        .from('admin_content')
-        .insert({
+        // Generate lesson ID
+        const lessonId = `${newContent.category.toLowerCase()}-${Date.now()}`;
+        
+        const lessonContentData = {
+          lessonId,
+          moduleId: newContent.category.toLowerCase(),
+          level: newContent.level,
+          // Note: status is not stored in Firebase for lessons
+          introduction: lessonData.introduction,
+          sections: lessonData.sections,
+          exercises: lessonData.exercises,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdBy: user?.uid || null
+        };
+
+        // Save to lessonContent collection
+        await setDoc(doc(db, 'lessonContent', lessonId), lessonContentData);
+
+        alert(`✅ Lesson created successfully! ID: ${lessonId}`);
+      }
+      // Handle Video type - save to videos collection
+      else if (newContent.type === 'video') {
+        if (!newContent.youtubeUrl) {
+          alert('Please provide a video URL');
+          setUploading(false);
+          return;
+        }
+
+        // Extract video ID from YouTube URL
+        const videoId = extractYouTubeId(newContent.youtubeUrl);
+        if (!videoId) {
+          alert('Invalid YouTube URL');
+          setUploading(false);
+          return;
+        }
+
+        const videoData = {
+          title: newContent.title,
+          description: newContent.description || '',
+          category: newContent.category.toLowerCase(),
+          level: newContent.level.toLowerCase(),
+          videoUrl: `https://www.youtube.com/embed/${videoId}`,
+          thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+          duration: newContent.duration || '0:00',
+          tags: newContent.tags,
+          views: 0,
+          likes: 0,
+          uploadedAt: serverTimestamp(),
+          createdBy: user?.uid || null
+        };
+
+        // Save to videos collection
+        await addDoc(collection(db, 'videos'), videoData);
+
+        alert(`✅ Video uploaded successfully!`);
+      } 
+      // Handle Quiz type - save to adminContent collection
+      else {
+        // Validation based on category
+        if (newContent.category === 'Reading' && !newContent.passage.trim()) {
+          alert('Please enter the reading passage');
+          setUploading(false);
+          return;
+        }
+
+        if (!newContent.questions.trim()) {
+          alert('Please add questions or prompts');
+          setUploading(false);
+          return;
+        }
+
+        let fileData: { url: string; name: string } | null = null;
+
+        if (selectedFile) {
+          fileData = await uploadFile(selectedFile);
+        }
+
+        const contentData = {
           title: newContent.title,
           type: newContent.type,
           level: newContent.level,
           category: newContent.category,
           description: newContent.description,
-          file_url: fileData?.url || null,
-          file_name: fileData?.name || null,
-          youtube_url: newContent.youtube_url || null,
-          questions: questionsData,
+          status: newContent.status,
+          fileUrl: fileData?.url || null,
+          fileName: fileData?.name || null,
+          youtubeUrl: newContent.youtubeUrl || null,
+          questions: newContent.questions || null,
           passage: newContent.passage || null,
-          created_by: userData?.user?.id
-        });
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdBy: user?.uid || null
+        };
 
-      if (error) throw error;
+        await addDoc(collection(db, 'adminContent'), contentData);
+
+        alert(`✅ ${newContent.type.charAt(0).toUpperCase() + newContent.type.slice(1)} created successfully`);
+      }
 
       await fetchContent();
       resetAddDialog();
-      toast.success(`${newContent.type.charAt(0).toUpperCase() + newContent.type.slice(1)} created successfully`);
     } catch (error) {
-      console.error('Error adding content:', error);
-      toast.error('Failed to create content');
+      console.error('❌ Error adding content:', error);
+      alert('Failed to create content: ' + (error as Error).message);
     } finally {
       setUploading(false);
     }
   };
 
+  // Helper function to extract YouTube video ID
+  const extractYouTubeId = (url: string): string | null => {
+    const patterns = [
+      /youtube\.com\/watch\?v=([^&]+)/,
+      /youtube\.com\/embed\/([^?]+)/,
+      /youtu\.be\/([^?]+)/,
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match) return match[1];
+    }
+    return null;
+  };
+
+  const handleEditClick = async (item: ContentItem) => {
+    setSelectedContent(item);
+    
+    // If it's a lesson, fetch full lesson data from lessonContent
+    if (item.type === 'lesson') {
+      try {
+        const lessonDoc = await getDoc(doc(db, 'lessonContent', item.id));
+        if (lessonDoc.exists()) {
+          const data = lessonDoc.data();
+          
+          console.log('🔍 Lesson data from Firebase:', data);
+          console.log('🔍 Exercises:', data.exercises);
+          
+          // Add IDs to sections if they don't have them
+          const sections = (data.sections || []).map((section: any, index: number) => ({
+            ...section,
+            id: section.id || `section-${index + 1}`
+          }));
+          
+          // Add IDs to exercises if they don't have them
+          const exercises = (data.exercises || []).map((exercise: any, index: number) => ({
+            ...exercise,
+            id: exercise.id || `exercise-${index + 1}`
+          }));
+          
+          // Populate lesson data
+          setLessonData({
+            introduction: data.introduction || { title: '', subtitle: '', summary: '' },
+            sections: sections,
+            exercises: exercises
+          });
+          // Populate basic info
+          const category = data.moduleId 
+            ? data.moduleId.charAt(0).toUpperCase() + data.moduleId.slice(1)
+            : 'Grammar';
+          
+          setNewContent({
+            ...newContent,
+            title: data.introduction?.title || '',
+            type: 'lesson',
+            level: data.level ? data.level.toUpperCase() : 'A1',
+            category: category,
+            status: data.status || 'draft'
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching lesson data:', error);
+        alert('Failed to load lesson data');
+        return;
+      }
+    }
+    // If it's a video, fetch full video data
+    else if (item.type === 'video') {
+      try {
+        const videoDoc = await getDoc(doc(db, 'videos', item.id));
+        if (videoDoc.exists()) {
+          const data = videoDoc.data();
+          // Capitalize category and level from Firebase
+          const category = data.category 
+            ? data.category.charAt(0).toUpperCase() + data.category.slice(1)
+            : 'General';
+          const level = data.level 
+            ? data.level.toUpperCase()
+            : 'A1';
+          
+          setNewContent({
+            ...newContent,
+            title: data.title || '',
+            type: 'video',
+            level: level,
+            category: category,
+            status: 'published',
+            description: data.description || '',
+            youtubeUrl: data.videoUrl || '',
+            duration: data.duration || '',
+            tags: data.tags || [],
+            tagInput: ''
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching video data:', error);
+        alert('Failed to load video data');
+        return;
+      }
+    }
+    
+    setIsEditDialogOpen(true);
+  };
+
   const handleEditContent = async () => {
     if (!selectedContent) return;
     
+    setUploading(true);
     try {
-      const { error } = await supabase
-        .from('admin_content')
-        .update({
-          title: selectedContent.title,
-          level: selectedContent.level,
-          category: selectedContent.category,
-          status: selectedContent.status,
-          description: selectedContent.description,
-          youtube_url: selectedContent.youtube_url
-        })
-        .eq('id', selectedContent.id);
+      const auth = getAuth();
+      const user = auth.currentUser;
 
-      if (error) throw error;
+      // Update Lesson
+      if (selectedContent.type === 'lesson') {
+        if (!lessonData.introduction.title) {
+          alert('Please fill in the Introduction title');
+          setUploading(false);
+          return;
+        }
+
+        const lessonContentData = {
+          lessonId: selectedContent.id,
+          moduleId: newContent.category.toLowerCase(),
+          level: newContent.level,
+          // Note: status is not stored in Firebase for lessons
+          introduction: lessonData.introduction,
+          sections: lessonData.sections,
+          exercises: lessonData.exercises,
+          updatedAt: serverTimestamp()
+        };
+
+        await updateDoc(doc(db, 'lessonContent', selectedContent.id), lessonContentData);
+        alert('✅ Lesson updated successfully!');
+      }
+      // Update Video
+      else if (selectedContent.type === 'video') {
+        if (!newContent.youtubeUrl) {
+          alert('Please provide a video URL');
+          setUploading(false);
+          return;
+        }
+
+        const videoId = extractYouTubeId(newContent.youtubeUrl);
+        if (!videoId) {
+          alert('Invalid YouTube URL');
+          setUploading(false);
+          return;
+        }
+
+        const videoData = {
+          title: newContent.title,
+          description: newContent.description || '',
+          category: newContent.category.toLowerCase(),
+          level: newContent.level.toLowerCase(),
+          videoUrl: `https://www.youtube.com/embed/${videoId}`,
+          thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+          duration: newContent.duration || '0:00',
+          tags: newContent.tags,
+          uploadedAt: serverTimestamp()
+        };
+
+        await updateDoc(doc(db, 'videos', selectedContent.id), videoData);
+        alert('✅ Video updated successfully!');
+      }
 
       await fetchContent();
       setIsEditDialogOpen(false);
-      toast.success('Content updated successfully');
+      resetEditDialog();
     } catch (error) {
-      console.error('Error updating content:', error);
-      toast.error('Failed to update content');
+      console.error('❌ Error updating content:', error);
+      alert('Failed to update content: ' + (error as Error).message);
+    } finally {
+      setUploading(false);
     }
   };
 
+  const resetEditDialog = () => {
+    setSelectedContent(null);
+    setNewContent({ 
+      title: '', 
+      type: 'lesson', 
+      level: 'A1', 
+      category: 'Grammar', 
+      description: '', 
+      youtubeUrl: '', 
+      passage: '',
+      questions: '',
+      status: 'draft',
+      duration: '',
+      tags: [],
+      tagInput: ''
+    });
+    setLessonData({
+      introduction: { title: '', subtitle: '', summary: '' },
+      sections: [],
+      exercises: []
+    });
+    setIsEditDialogOpen(false);
+  };
+
   const handleDeleteContent = async (id: string) => {
+    const confirmed = window.confirm('Are you sure you want to delete this content?');
+    if (!confirmed) return;
+
     try {
       const item = content.find(c => c.id === id);
       
       // Delete file from storage if exists
-      if (item?.file_url) {
-        const filePath = item.file_url.split('/').slice(-2).join('/');
-        await supabase.storage.from('admin-content').remove([filePath]);
+      if (item?.fileUrl) {
+        try {
+          const fileRef = ref(storage, item.fileUrl);
+          await deleteObject(fileRef);
+        } catch (error) {
+          console.warn('File not found in storage:', error);
+        }
       }
 
-      const { error } = await supabase
-        .from('admin_content')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
+      await deleteDoc(doc(db, 'adminContent', id));
       setContent(content.filter((item) => item.id !== id));
-      toast.success('Content deleted successfully');
+      alert('✅ Content deleted successfully');
     } catch (error) {
-      console.error('Error deleting content:', error);
-      toast.error('Failed to delete content');
+      console.error('❌ Error deleting content:', error);
+      alert('Failed to delete content');
     }
   };
 
-  const openEditDialog = (item: ContentItem) => {
-    setSelectedContent(item);
-    setIsEditDialogOpen(true);
-  };
+  // This function is replaced by handleEditClick above
 
   const resetAddDialog = () => {
-    setNewContent({ title: '', type: 'lesson', level: 'A1', category: 'Grammar', description: '', youtube_url: '', passage: '' });
+    setNewContent({ 
+      title: '', 
+      type: 'lesson', 
+      level: 'A1', 
+      category: 'Grammar', 
+      description: '', 
+      youtubeUrl: '', 
+      passage: '',
+      questions: '',
+      status: 'draft',
+      duration: '',
+      tags: [],
+      tagInput: ''
+    });
+    setLessonData({
+      introduction: {
+        title: '',
+        subtitle: '',
+        summary: ''
+      },
+      sections: [],
+      exercises: []
+    });
     setSelectedFile(null);
-    setQuestions([]);
-    setVocabularyItems([]);
-    setGrammarRules([]);
-    setListeningMode('multiple');
     setIsAddDialogOpen(false);
   };
 
   const getAcceptedFileTypes = () => {
-    const categoryConfig = categoryFieldConfig[newContent.category] || categoryFieldConfig['Grammar'];
-    
-    if (categoryConfig.showAudio) {
-      return 'audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg,.m4a';
-    }
     if (newContent.type === 'video') {
       return 'video/mp4,video/webm,video/ogg,video/quicktime';
     }
     return '.pdf,.doc,.docx';
   };
-  
-  const getCategoryConfig = () => {
-    return categoryFieldConfig[newContent.category] || categoryFieldConfig['Grammar'];
-  };
-
-  // Reset builders when category changes
-  useEffect(() => {
-    setQuestions([]);
-    setVocabularyItems([]);
-    setGrammarRules([]);
-    setSelectedFile(null);
-    setListeningMode('multiple');
-    setNewContent(prev => ({ ...prev, youtube_url: '', passage: '' }));
-  }, [newContent.category]);
 
   if (loading) {
     return (
       <Card className="bg-card border-border">
         <CardContent className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="bg-card border-border">
+        <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
+          <p className="text-destructive">❌ Error: {error}</p>
+          <Button onClick={fetchContent}>Retry</Button>
         </CardContent>
       </Card>
     );
@@ -487,7 +703,6 @@ export function ContentManagement() {
             <TabsList className="bg-background border border-border">
               <TabsTrigger value="all">All</TabsTrigger>
               <TabsTrigger value="lesson">Lessons</TabsTrigger>
-              <TabsTrigger value="quiz">Quizzes</TabsTrigger>
               <TabsTrigger value="video">Videos</TabsTrigger>
             </TabsList>
           </Tabs>
@@ -531,26 +746,26 @@ export function ContentManagement() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {item.file_url && (
+                    {item.fileUrl && (
                       <a 
-                        href={item.file_url} 
+                        href={item.fileUrl} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 text-primary hover:underline text-sm"
                       >
                         <File className="w-3 h-3" />
-                        {item.file_name || 'View File'}
+                        {item.fileName || 'View File'}
                       </a>
                     )}
-                    {item.youtube_url && (
+                    {item.youtubeUrl && (
                       <a 
-                        href={item.youtube_url} 
+                        href={item.youtubeUrl} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 text-primary hover:underline text-sm"
                       >
                         <Link className="w-3 h-3" />
-                        Audio/Video Link
+                        Video Link
                       </a>
                     )}
                   </TableCell>
@@ -559,7 +774,7 @@ export function ContentManagement() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => openEditDialog(item)}
+                        onClick={() => handleEditClick(item)}
                         className="text-muted-foreground hover:text-foreground"
                       >
                         <Edit className="w-4 h-4" />
@@ -589,29 +804,27 @@ export function ContentManagement() {
 
       {/* Add Content Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={(open) => !open && resetAddDialog()}>
-        <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh]">
+        <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Upload New Content</DialogTitle>
+            <DialogTitle className="text-foreground">
+              {newContent.type === 'lesson' ? 'Create New Lesson' : 'Upload New Content'}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {newContent.type === 'lesson' 
+                ? 'Build a structured lesson with introduction, sections, and exercises.' 
+                : 'Upload videos or quizzes for your students.'}
+            </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[calc(90vh-140px)] pr-4">
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  value={newContent.title}
-                  onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
-                  placeholder="Enter content title"
-                  className="bg-background border-border"
-                />
-              </div>
+              {/* Basic Info - Always show */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="type">Content Type</Label>
                   <Select 
                     value={newContent.type} 
                     onValueChange={(value: 'lesson' | 'quiz' | 'video') => {
-                      setNewContent({ ...newContent, type: value, youtube_url: '' });
+                      setNewContent({ ...newContent, type: value, youtubeUrl: '' });
                       setSelectedFile(null);
                     }}
                   >
@@ -641,230 +854,211 @@ export function ContentManagement() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Select value={newContent.category} onValueChange={(value) => setNewContent({ ...newContent, category: value })}>
+                    <SelectTrigger className="bg-background border-border">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Grammar">Grammar</SelectItem>
+                      <SelectItem value="Vocabulary">Vocabulary</SelectItem>
+                      <SelectItem value="Reading">Reading</SelectItem>
+                      <SelectItem value="Listening">Listening</SelectItem>
+                      <SelectItem value="Writing">Writing</SelectItem>
+                      <SelectItem value="Speaking">Speaking</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select value={newContent.status} onValueChange={(value: 'draft' | 'published') => setNewContent({ ...newContent, status: value })}>
+                    <SelectTrigger className="bg-background border-border">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="published">Published</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Select value={newContent.category} onValueChange={(value) => setNewContent({ ...newContent, category: value })}>
-                  <SelectTrigger className="bg-background border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Grammar">Grammar</SelectItem>
-                    <SelectItem value="Vocabulary">Vocabulary</SelectItem>
-                    <SelectItem value="Reading">Reading</SelectItem>
-                    <SelectItem value="Listening">Listening</SelectItem>
-                    <SelectItem value="Writing">Writing</SelectItem>
-                    <SelectItem value="Speaking">Speaking</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {/* Category-specific fields */}
-              {(() => {
-                const config = getCategoryConfig();
-                return (
-                  <>
-                    {/* Grammar Builder */}
-                    {config.showGrammarBuilder && (
-                      <GrammarBuilder 
-                        rules={grammarRules} 
-                        onChange={setGrammarRules} 
+
+              {/* Lesson Type - Show LessonBuilder */}
+              {newContent.type === 'lesson' && (
+                <LessonBuilder data={lessonData} onChange={setLessonData} />
+              )}
+
+              {/* Quiz Type - Show simplified fields */}
+              {newContent.type === 'quiz' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Quiz Title</Label>
+                    <Input
+                      id="title"
+                      value={newContent.title}
+                      onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
+                      placeholder="Enter quiz title"
+                      className="bg-background border-border"
+                    />
+                  </div>
+
+                  {newContent.category === 'Reading' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="passage">Reading Passage</Label>
+                      <Textarea
+                        id="passage"
+                        value={newContent.passage}
+                        onChange={(e) => setNewContent({ ...newContent, passage: e.target.value })}
+                        placeholder="Enter the reading passage..."
+                        className="bg-background border-border"
+                        rows={6}
                       />
-                    )}
+                    </div>
+                  )}
 
-                    {/* Vocabulary Builder */}
-                    {config.showVocabularyBuilder && (
-                      <VocabularyBuilder 
-                        items={vocabularyItems} 
-                        onChange={setVocabularyItems} 
+                  <div className="space-y-2">
+                    <Label htmlFor="questions">Questions (JSON format)</Label>
+                    <Textarea
+                      id="questions"
+                      value={newContent.questions}
+                      onChange={(e) => setNewContent({ ...newContent, questions: e.target.value })}
+                      placeholder='[{"question": "What is...?", "options": ["A", "B", "C", "D"], "answer": 0}]'
+                      className="bg-background border-border font-mono text-xs"
+                      rows={8}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={newContent.description}
+                      onChange={(e) => setNewContent({ ...newContent, description: e.target.value })}
+                      placeholder="Enter description"
+                      className="bg-background border-border"
+                      rows={2}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Video Type */}
+              {newContent.type === 'video' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Video Title</Label>
+                    <Input
+                      id="title"
+                      value={newContent.title}
+                      onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
+                      placeholder="Enter video title"
+                      className="bg-background border-border"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="youtube">YouTube URL</Label>
+                    <div className="relative">
+                      <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="youtube"
+                        value={newContent.youtubeUrl}
+                        onChange={(e) => setNewContent({ ...newContent, youtubeUrl: e.target.value })}
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        className="pl-10 bg-background border-border"
                       />
-                    )}
+                    </div>
+                  </div>
 
-                    {/* Listening Mode Selector */}
-                    {config.showListeningModeSelector && (
-                      <div className="space-y-2">
-                        <Label>Listening Format</Label>
-                        <Select value={listeningMode} onValueChange={(v: 'single' | 'multiple') => {
-                          setListeningMode(v);
-                          setQuestions([]);
-                        }}>
-                          <SelectTrigger className="bg-background border-border">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="single">One audio file per question</SelectItem>
-                            <SelectItem value="multiple">One audio file with multiple questions</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          {listeningMode === 'single' 
-                            ? 'Each question will have its own audio file or URL' 
-                            : 'One audio file for all questions below'}
-                        </p>
-                      </div>
-                    )}
+                  <div className="space-y-2">
+                    <Label htmlFor="duration">Duration</Label>
+                    <Input
+                      id="duration"
+                      value={newContent.duration}
+                      onChange={(e) => setNewContent({ ...newContent, duration: e.target.value })}
+                      placeholder="e.g., 19:30"
+                      className="bg-background border-border"
+                    />
+                    <p className="text-xs text-muted-foreground">Format: MM:SS or HH:MM:SS</p>
+                  </div>
 
-                    {/* Audio Upload for Listening (only for 'multiple' mode) */}
-                    {config.showAudio && listeningMode === 'multiple' && (
-                      <div className="space-y-2">
-                        <Label>{config.audioLabel || 'Upload Audio'}</Label>
-                        <div className="border-2 border-dashed border-border rounded-lg p-4">
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept={getAcceptedFileTypes()}
-                            onChange={handleFileSelect}
-                            className="hidden"
-                          />
-                          {selectedFile ? (
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <File className="w-5 h-5 text-primary" />
-                                <span className="text-sm text-foreground truncate max-w-[200px]">
-                                  {selectedFile.name}
-                                </span>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setSelectedFile(null)}
-                                className="text-muted-foreground hover:text-destructive"
-                              >
-                                <X className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="flex flex-col items-center gap-2 cursor-pointer"
-                              onClick={() => fileInputRef.current?.click()}
+                  <div className="space-y-2">
+                    <Label htmlFor="tags">Tags</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="tags"
+                        value={newContent.tagInput}
+                        onChange={(e) => setNewContent({ ...newContent, tagInput: e.target.value })}
+                        placeholder="Enter a tag and press Enter"
+                        className="bg-background border-border flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newContent.tagInput.trim()) {
+                            e.preventDefault();
+                            setNewContent({
+                              ...newContent,
+                              tags: [...newContent.tags, newContent.tagInput.trim()],
+                              tagInput: ''
+                            });
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          if (newContent.tagInput.trim()) {
+                            setNewContent({
+                              ...newContent,
+                              tags: [...newContent.tags, newContent.tagInput.trim()],
+                              tagInput: ''
+                            });
+                          }
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {newContent.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {newContent.tags.map((tag, index) => (
+                          <Badge
+                            key={index}
+                            variant="secondary"
+                            className="gap-1"
+                          >
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewContent({
+                                  ...newContent,
+                                  tags: newContent.tags.filter((_, i) => i !== index)
+                                });
+                              }}
+                              className="ml-1 hover:text-destructive"
                             >
-                              <Upload className="w-8 h-8 text-muted-foreground" />
-                              <span className="text-sm text-muted-foreground">
-                                Click to upload audio (MP3, WAV, OGG, M4A)
-                              </span>
-                            </div>
-                          )}
-                        </div>
+                              <X className="w-3 h-3" />
+                            </button>
+                          </Badge>
+                        ))}
                       </div>
                     )}
+                  </div>
 
-                    {/* YouTube/Audio URL for Listening (only for 'multiple' mode) */}
-                    {config.showYoutubeUrl && listeningMode === 'multiple' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="youtube">Or Audio/Video URL</Label>
-                        <div className="relative">
-                          <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                          <Input
-                            id="youtube"
-                            value={newContent.youtube_url}
-                            onChange={(e) => setNewContent({ ...newContent, youtube_url: e.target.value })}
-                            placeholder="https://www.youtube.com/watch?v=... or audio URL"
-                            className="pl-10 bg-background border-border"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Reading Passage for Reading */}
-                    {config.showPassage && (
-                      <div className="space-y-2">
-                        <Label htmlFor="passage">{config.passageLabel || 'Reading Passage'}</Label>
-                        <Textarea
-                          id="passage"
-                          value={newContent.passage}
-                          onChange={(e) => setNewContent({ ...newContent, passage: e.target.value })}
-                          placeholder="Enter the reading passage or article text here..."
-                          className="bg-background border-border"
-                          rows={6}
-                        />
-                      </div>
-                    )}
-
-                    {/* Question Builder for Reading/Listening/Speaking/Writing/Grammar */}
-                    {config.showQuestions && (
-                      <QuestionBuilder
-                        questions={questions}
-                        onChange={setQuestions}
-                        label={config.questionsLabel || 'Questions'}
-                        questionPlaceholder={config.questionPlaceholder}
-                        showOptions={config.showOptions !== false}
-                        showAudioUrl={config.showListeningModeSelector && listeningMode === 'single'}
-                      />
-                    )}
-
-                    {/* Video Upload (for video type) */}
-                    {newContent.type === 'video' && !config.showAudio && (
-                      <>
-                        <div className="space-y-2">
-                          <Label>Upload Video</Label>
-                          <div className="border-2 border-dashed border-border rounded-lg p-4">
-                            <input
-                              ref={fileInputRef}
-                              type="file"
-                              accept="video/mp4,video/webm,video/ogg,video/quicktime"
-                              onChange={handleFileSelect}
-                              className="hidden"
-                            />
-                            {selectedFile ? (
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <File className="w-5 h-5 text-primary" />
-                                  <span className="text-sm text-foreground truncate max-w-[200px]">
-                                    {selectedFile.name}
-                                  </span>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => setSelectedFile(null)}
-                                  className="text-muted-foreground hover:text-destructive"
-                                >
-                                  <X className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div 
-                                className="flex flex-col items-center gap-2 cursor-pointer"
-                                onClick={() => fileInputRef.current?.click()}
-                              >
-                                <Upload className="w-8 h-8 text-muted-foreground" />
-                                <span className="text-sm text-muted-foreground">
-                                  Click to upload video (MP4, WebM, MOV)
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="youtube">Or YouTube URL</Label>
-                          <div className="relative">
-                            <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                              id="youtube"
-                              value={newContent.youtube_url}
-                              onChange={(e) => setNewContent({ ...newContent, youtube_url: e.target.value })}
-                              placeholder="https://www.youtube.com/watch?v=..."
-                              className="pl-10 bg-background border-border"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </>
-                );
-              })()}
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={newContent.description}
-                  onChange={(e) => setNewContent({ ...newContent, description: e.target.value })}
-                  placeholder="Enter content description"
-                  className="bg-background border-border"
-                  rows={3}
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={newContent.description}
+                      onChange={(e) => setNewContent({ ...newContent, description: e.target.value })}
+                      placeholder="Enter description"
+                      className="bg-background border-border"
+                      rows={3}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </ScrollArea>
           <DialogFooter>
@@ -875,10 +1069,10 @@ export function ContentManagement() {
               {uploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
+                  Creating...
                 </>
               ) : (
-                'Create Content'
+                `Create ${newContent.type === 'lesson' ? 'Lesson' : newContent.type === 'quiz' ? 'Quiz' : 'Video'}`
               )}
             </Button>
           </DialogFooter>
@@ -886,29 +1080,25 @@ export function ContentManagement() {
       </Dialog>
 
       {/* Edit Content Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="bg-card border-border">
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => !open && resetEditDialog()}>
+        <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Edit Content</DialogTitle>
+            <DialogTitle className="text-foreground">
+              Edit {selectedContent?.type === 'lesson' ? 'Lesson' : 'Video'}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {selectedContent?.type === 'lesson' 
+                ? 'Update lesson content, sections, and exercises.' 
+                : 'Update video details and metadata.'}
+            </DialogDescription>
           </DialogHeader>
-          {selectedContent && (
+          <ScrollArea className="max-h-[calc(90vh-140px)] pr-4">
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-title">Title</Label>
-                <Input
-                  id="edit-title"
-                  value={selectedContent.title}
-                  onChange={(e) => setSelectedContent({ ...selectedContent, title: e.target.value })}
-                  className="bg-background border-border"
-                />
-              </div>
+              {/* Basic Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-level">Level</Label>
-                  <Select 
-                    value={selectedContent.level} 
-                    onValueChange={(value) => setSelectedContent({ ...selectedContent, level: value })}
-                  >
+                  <Select value={newContent.level} onValueChange={(value) => setNewContent({ ...newContent, level: value })}>
                     <SelectTrigger className="bg-background border-border">
                       <SelectValue />
                     </SelectTrigger>
@@ -923,72 +1113,159 @@ export function ContentManagement() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-status">Status</Label>
-                  <Select 
-                    value={selectedContent.status} 
-                    onValueChange={(value: 'published' | 'draft') => setSelectedContent({ ...selectedContent, status: value })}
-                  >
+                  <Label htmlFor="edit-category">Category</Label>
+                  <Select value={newContent.category} onValueChange={(value) => setNewContent({ ...newContent, category: value })}>
                     <SelectTrigger className="bg-background border-border">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="published">Published</SelectItem>
+                      <SelectItem value="Grammar">Grammar</SelectItem>
+                      <SelectItem value="Vocabulary">Vocabulary</SelectItem>
+                      <SelectItem value="Reading">Reading</SelectItem>
+                      <SelectItem value="Listening">Listening</SelectItem>
+                      <SelectItem value="Writing">Writing</SelectItem>
+                      <SelectItem value="Speaking">Speaking</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-category">Category</Label>
-                <Select 
-                  value={selectedContent.category} 
-                  onValueChange={(value) => setSelectedContent({ ...selectedContent, category: value })}
-                >
-                  <SelectTrigger className="bg-background border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Grammar">Grammar</SelectItem>
-                    <SelectItem value="Vocabulary">Vocabulary</SelectItem>
-                    <SelectItem value="Reading">Reading</SelectItem>
-                    <SelectItem value="Listening">Listening</SelectItem>
-                    <SelectItem value="Writing">Writing</SelectItem>
-                    <SelectItem value="Speaking">Speaking</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-description">Description</Label>
-                <Textarea
-                  id="edit-description"
-                  value={selectedContent.description || ''}
-                  onChange={(e) => setSelectedContent({ ...selectedContent, description: e.target.value })}
-                  className="bg-background border-border"
-                  rows={3}
-                />
-              </div>
-              {selectedContent.type === 'video' && (
-                <div className="space-y-2">
-                  <Label htmlFor="edit-youtube">YouTube URL</Label>
-                  <div className="relative">
-                    <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+
+              {/* Lesson Type - Show LessonBuilder */}
+              {selectedContent?.type === 'lesson' && (
+                <LessonBuilder data={lessonData} onChange={setLessonData} />
+              )}
+
+              {/* Video Type */}
+              {selectedContent?.type === 'video' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-title">Video Title</Label>
                     <Input
-                      id="edit-youtube"
-                      value={selectedContent.youtube_url || ''}
-                      onChange={(e) => setSelectedContent({ ...selectedContent, youtube_url: e.target.value })}
-                      className="pl-10 bg-background border-border"
+                      id="edit-title"
+                      value={newContent.title}
+                      onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
+                      placeholder="Enter video title"
+                      className="bg-background border-border"
                     />
                   </div>
-                </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-youtube">YouTube URL</Label>
+                    <div className="relative">
+                      <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="edit-youtube"
+                        value={newContent.youtubeUrl}
+                        onChange={(e) => setNewContent({ ...newContent, youtubeUrl: e.target.value })}
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        className="pl-10 bg-background border-border"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-duration">Duration</Label>
+                    <Input
+                      id="edit-duration"
+                      value={newContent.duration}
+                      onChange={(e) => setNewContent({ ...newContent, duration: e.target.value })}
+                      placeholder="e.g., 19:30"
+                      className="bg-background border-border"
+                    />
+                    <p className="text-xs text-muted-foreground">Format: MM:SS or HH:MM:SS</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-tags">Tags</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="edit-tags"
+                        value={newContent.tagInput}
+                        onChange={(e) => setNewContent({ ...newContent, tagInput: e.target.value })}
+                        placeholder="Enter a tag and press Enter"
+                        className="bg-background border-border flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newContent.tagInput.trim()) {
+                            e.preventDefault();
+                            setNewContent({
+                              ...newContent,
+                              tags: [...newContent.tags, newContent.tagInput.trim()],
+                              tagInput: ''
+                            });
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          if (newContent.tagInput.trim()) {
+                            setNewContent({
+                              ...newContent,
+                              tags: [...newContent.tags, newContent.tagInput.trim()],
+                              tagInput: ''
+                            });
+                          }
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {newContent.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {newContent.tags.map((tag, index) => (
+                          <Badge
+                            key={index}
+                            variant="secondary"
+                            className="gap-1"
+                          >
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewContent({
+                                  ...newContent,
+                                  tags: newContent.tags.filter((_, i) => i !== index)
+                                });
+                              }}
+                              className="ml-1 hover:text-destructive"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-description">Description</Label>
+                    <Textarea
+                      id="edit-description"
+                      value={newContent.description}
+                      onChange={(e) => setNewContent({ ...newContent, description: e.target.value })}
+                      placeholder="Enter description"
+                      className="bg-background border-border"
+                      rows={3}
+                    />
+                  </div>
+                </>
               )}
             </div>
-          )}
+          </ScrollArea>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <Button variant="outline" onClick={resetEditDialog} disabled={uploading}>
               Cancel
             </Button>
-            <Button onClick={handleEditContent} className="bg-primary hover:bg-primary/90">
-              Save Changes
+            <Button onClick={handleEditContent} className="bg-primary hover:bg-primary/90" disabled={uploading}>
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Save Changes'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
