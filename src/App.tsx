@@ -21,7 +21,6 @@ import AchievementsPage from "./pages/AchievementsPage";
 import SettingsPage from "./pages/SettingsPage";
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import NotFound from "./pages/NotFound";
-import ImportLesson from "./pages/importLessons";
 
 const queryClient = new QueryClient();
 
@@ -52,7 +51,6 @@ function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="*" element={<NotFound />} />
-              <Route path="/import-lesson" element={<ImportLesson />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>
