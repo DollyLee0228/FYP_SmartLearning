@@ -126,8 +126,8 @@ def test_content_based():
     )
     
     print(recommendations.to_string(index=False))
-    print("\n算法：TF-IDF + Cosine Similarity")
-    print("权重：相似度 70% + Level匹配 30%")
+    print("\nCalculation：TF-IDF + Cosine Similarity")
+    print("Priority：Similar 70% + Level Match 30%")
 
 
 if __name__ == '__main__':
