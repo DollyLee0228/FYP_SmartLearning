@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -11,6 +11,9 @@ import {
   Sparkles, Clock, ArrowRight, ArrowLeft, BookOpen, RefreshCw, Target, 
   Brain, Lightbulb, TrendingUp, Search, Filter, Zap, Star
 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { db } from '@/config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface Recommendation {
   id: string;
@@ -23,6 +26,9 @@ interface Recommendation {
   reason: string;
   xpReward: number;
   route: string;
+  category: string;
+  level: string;
+  score: number;
 }
 
 const typeIcons = {
@@ -43,90 +49,166 @@ const priorityStyles = {
   low: 'bg-slate-500/10 text-slate-400 border-slate-500/30',
 };
 
-const recommendations: Recommendation[] = [
-  {
-    id: '1',
-    title: 'Present Simple Tense',
-    description: 'Master the present simple tense with interactive exercises and real-world examples',
-    type: 'lesson',
-    priority: 'high',
-    estimatedTime: 15,
-    module: 'Grammar',
-    reason: 'Based on your quiz results',
-    xpReward: 100,
-    route: '/modules/grammar/lesson/grammar-1',
-  },
-  {
-    id: '2',
-    title: 'Everyday Essentials',
-    description: 'Learn essential everyday English vocabulary for daily conversations',
-    type: 'practice',
-    priority: 'medium',
-    estimatedTime: 10,
-    module: 'Vocabulary',
-    reason: 'Expand your word bank',
-    xpReward: 75,
-    route: '/modules/vocabulary/lesson/vocabulary-1',
-  },
-  {
-    id: '3',
-    title: 'Basic Pronunciation',
-    description: 'Practice basic pronunciation with speaking exercises',
-    type: 'review',
-    priority: 'low',
-    estimatedTime: 8,
-    module: 'Speaking',
-    reason: "It's been 5 days since last practice",
-    xpReward: 50,
-    route: '/modules/speaking/exercise/speaking-1',
-  },
-  {
-    id: '4',
-    title: 'Reading Comprehension',
-    description: 'Practice reading comprehension with passages and questions',
-    type: 'lesson',
-    priority: 'high',
-    estimatedTime: 20,
-    module: 'Reading',
-    reason: 'Essential for fluency',
-    xpReward: 120,
-    route: '/modules/reading/exercise/reading-1',
-  },
-  {
-    id: '5',
-    title: 'Listening Practice',
-    description: 'Practice understanding native speakers with various accents and speeds',
-    type: 'practice',
-    priority: 'medium',
-    estimatedTime: 15,
-    module: 'Listening',
-    reason: 'Improve your ear training',
-    xpReward: 90,
-    route: '/modules/listening/exercise/listening-1',
-  },
-  {
-    id: '6',
-    title: 'Writing Skills',
-    description: 'Practice your writing skills with guided prompts',
-    type: 'review',
-    priority: 'medium',
-    estimatedTime: 12,
-    module: 'Writing',
-    reason: 'Common mistake area',
-    xpReward: 60,
-    route: '/modules/writing/exercise/writing-1',
-  },
-];
+// 从 Firebase 数据转换为 UI 格式（保持真实路由）
+const convertFirebaseToRecommendation = (firebaseRec: any, index: number): Recommendation => {
+  const getPriority = (score: number): 'high' | 'medium' | 'low' => {
+    if (score >= 0.7) return 'high';
+    if (score >= 0.4) return 'medium';
+    return 'low';
+  };
+
+  const getType = (type?: string, category?: string): 'lesson' | 'practice' | 'review' => {
+    // 优先使用 Firebase 提供的 type
+    if (type) {
+      if (type === 'video') return 'practice';
+      if (type === 'lesson') return 'lesson';
+      return 'review';
+    }
+    
+    // 否则根据 category 判断
+    const lowerCategory = (category || '').toLowerCase();
+    if (lowerCategory.includes('grammar') || lowerCategory.includes('vocabulary')) return 'lesson';
+    if (lowerCategory.includes('practice') || lowerCategory.includes('exercise')) return 'practice';
+    return 'review';
+  };
+
+  const getEstimatedTime = (level: string): number => {
+    const levelMap: { [key: string]: number } = {
+      'A1': 10, 'A2': 12, 'B1': 15, 'B2': 18, 'C1': 20, 'C2': 25
+    };
+    return levelMap[level] || 15;
+  };
+
+  const getXpReward = (score: number, level: string): number => {
+    const baseXp = 50;
+    const scoreBonus = Math.round(score * 100);
+    const levelBonus = { 'A1': 0, 'A2': 10, 'B1': 20, 'B2': 30, 'C1': 40, 'C2': 50 }[level] || 0;
+    return baseXp + scoreBonus + levelBonus;
+  };
+
+  const getReason = (score: number, index: number): string => {
+    if (index === 0) return 'Best match for your learning goals';
+    if (score >= 0.8) return 'Highly recommended based on your profile';
+    if (score >= 0.6) return 'Great match for your current level';
+    return 'Recommended to expand your skills';
+  };
+
+  return {
+    id: firebaseRec.id,
+    title: firebaseRec.title,
+    description: firebaseRec.description || `Master ${firebaseRec.title.toLowerCase()} with interactive exercises`,
+    type: getType(firebaseRec.type, firebaseRec.category),
+    priority: getPriority(firebaseRec.score),
+    estimatedTime: getEstimatedTime(firebaseRec.level),
+    module: firebaseRec.category,
+    reason: getReason(firebaseRec.score, index),
+    xpReward: getXpReward(firebaseRec.score, firebaseRec.level),
+    route: firebaseRec.route || `/modules/${firebaseRec.category.toLowerCase()}/lesson/${firebaseRec.id}`, // 使用 Firebase 提供的真实路由
+    category: firebaseRec.category,
+    level: firebaseRec.level,
+    score: firebaseRec.score,
+  };
+};
 
 export default function RecommendationsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userLevel, setUserLevel] = useState<string>('A1');
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchRecommendations = async () => {
+      try {
+        setLoading(true);
+        
+        const recDoc = await getDoc(doc(db, 'recommendations', user.uid));
+        
+        if (recDoc.exists()) {
+          const data = recDoc.data();
+          
+          const convertedRecs = data.recommendations.map((rec: any, index: number) => 
+            convertFirebaseToRecommendation(rec, index)
+          );
+          
+          setRecommendations(convertedRecs);
+          setUserLevel(data.userLevel || 'A1');
+        } else {
+          console.log('No recommendations found');
+          setRecommendations([]);
+        }
+        
+      } catch (error) {
+        console.error('Error fetching recommendations:', error);
+        setRecommendations([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecommendations();
+  }, [user]);
+
+  if (loading) {
+    return (
+      <SidebarProvider>
+        <div className="flex min-h-screen w-full bg-white">
+          <DashboardSidebar />
+          <main className="flex-1 p-6 lg:p-8 overflow-auto">
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading your personalized recommendations...</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      </SidebarProvider>
+    );
+  }
+
+  if (recommendations.length === 0) {
+    return (
+      <SidebarProvider>
+        <div className="flex min-h-screen w-full bg-white">
+          <DashboardSidebar />
+          <main className="flex-1 p-6 lg:p-8 overflow-auto">
+            <Button
+              variant="ghost"
+              onClick={() => navigate('/dashboard')}
+              className="mb-4 text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Dashboard
+            </Button>
+            <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+              <div className="text-center max-w-md">
+                <div className="w-24 h-24 rounded-full bg-violet-100 flex items-center justify-center mx-auto mb-6">
+                  <Brain className="w-12 h-12 text-violet-500" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">No Recommendations Yet</h2>
+                <p className="text-muted-foreground mb-6">
+                  Complete your profile and take a quiz to get personalized learning recommendations!
+                </p>
+                <Button onClick={() => navigate('/dashboard')} className="gap-2">
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Dashboard
+                </Button>
+              </div>
+            </div>
+          </main>
+        </div>
+      </SidebarProvider>
+    );
+  }
 
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-white">
         <DashboardSidebar />
         <main className="flex-1 p-6 lg:p-8 overflow-auto">
-          {/* Header */}
           <div className="mb-8">
             <Button
               variant="ghost"
@@ -147,7 +229,6 @@ export default function RecommendationsPage() {
             </div>
           </div>
 
-          {/* AI Insight Banner */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -160,14 +241,14 @@ export default function RecommendationsPage() {
               <div>
                 <h3 className="font-semibold text-lg mb-1">Your Learning Insight</h3>
                 <p className="text-muted-foreground">
-                  Based on your learning patterns, you're <span className="text-violet-400 font-medium">72% more likely</span> to retain grammar lessons in the morning. 
-                  We've prioritized grammar content for you today. Your vocabulary retention is strongest after completing listening exercises.
+                  Based on your <span className="text-violet-400 font-medium">{userLevel}</span> level and learning goals, 
+                  we've curated {recommendations.length} personalized lessons for you. 
+                  Start with high-priority items for the best results!
                 </p>
               </div>
             </div>
           </motion.div>
 
-          {/* Search and Filter */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -182,7 +263,6 @@ export default function RecommendationsPage() {
             </Button>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
               { label: 'Total Recommendations', value: recommendations.length, icon: Lightbulb, color: 'text-violet-400' },
@@ -209,7 +289,6 @@ export default function RecommendationsPage() {
             ))}
           </div>
 
-          {/* Recommendations Grid */}
           <div className="grid gap-4">
             {recommendations.map((rec, index) => {
               const TypeIcon = typeIcons[rec.type];
@@ -222,12 +301,10 @@ export default function RecommendationsPage() {
                 >
                   <Card className="p-6 hover:border-primary/40 transition-all duration-300 group cursor-pointer">
                     <div className="flex items-start gap-4">
-                      {/* Type Icon */}
                       <div className={`w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 border ${typeStyles[rec.type]}`}>
                         <TypeIcon className="w-7 h-7" />
                       </div>
                       
-                      {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <h3 className="font-semibold text-lg">{rec.title}</h3>
@@ -236,6 +313,9 @@ export default function RecommendationsPage() {
                           </Badge>
                           <Badge variant="secondary" className="text-xs">
                             {rec.module}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-500">
+                            {rec.level}
                           </Badge>
                         </div>
                         
@@ -256,7 +336,6 @@ export default function RecommendationsPage() {
                         </div>
                       </div>
 
-                      {/* Action Button */}
                       <Button 
                         className="opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg"
                         onClick={() => navigate(rec.route)}
