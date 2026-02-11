@@ -15,6 +15,7 @@ import ListeningModule from "./pages/modules/ListeningModule";
 import WritingModule from "./pages/modules/WritingModule";
 import SpeakingModule from "./pages/modules/SpeakingModule";
 import LessonPage from "./pages/LessonPage";
+import LearningGoalsPage from "./pages/LearningGoalsPage";
 import VideosPage from "./pages/VideosPage";
 import RecommendationsPage from "./pages/RecommendationsPage";
 import AchievementsPage from "./pages/AchievementsPage";
@@ -47,6 +48,7 @@ function App() {
               <Route path="/lesson/:moduleId/:lessonId" element={<LessonPage />} />
               <Route path="/videos" element={<VideosPage />} />
               <Route path="/recommendations" element={<RecommendationsPage />} />
+              <Route path="/learning-goals" element={<LearningGoalsPage/> } />
               <Route path="/achievements" element={<AchievementsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin" element={<AdminDashboard />} />

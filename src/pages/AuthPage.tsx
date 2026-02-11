@@ -1,8 +1,8 @@
-// AuthPage.tsx - 修复版
-// ✅ 登录后检查learningGoalsCompleted，决定跳转到Learning Goals或Dashboard
+// AuthPage.tsx - Fixed version
+// Flow: Quiz → Learning Goals → Dashboard
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
@@ -35,11 +35,15 @@ interface PendingQuizData {
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // All hooks at top level
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [pendingQuizData, setPendingQuizData] = useState<PendingQuizData | null>(null);
+  const hasChecked = useRef(false);
 
   useEffect(() => {
     // Check for pending quiz data
@@ -61,13 +65,14 @@ export default function AuthPage() {
 
     // Check if user is already logged in
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
+      if (user && !hasChecked.current) {
+        hasChecked.current = true;
         await checkUserRoleAndRedirect(user.uid);
       }
     });
 
     return () => unsubscribe();
-  }, [navigate]);
+  }, []);
 
   const saveQuizResultsToFirestore = async (
     userId: string, 
@@ -100,10 +105,10 @@ export default function AuthPage() {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      console.log('Quiz results saved successfully to Firestore');
+      console.log('✅ Quiz results saved successfully to Firestore');
       toast.success('Your quiz results have been saved!');
     } catch (error) {
-      console.error('Error saving quiz results:', error);
+      console.error('❌ Error saving quiz results:', error);
       toast.error('Failed to save quiz results. Please try again.');
       throw error;
     }
@@ -123,20 +128,26 @@ export default function AuthPage() {
         displayName,
         role,
         assessmentCompleted: false,
-        learningGoalsCompleted: false, // ✅ 添加这个字段
+        learningGoalsCompleted: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
-      console.log('User profile created successfully');
+      console.log('✅ User profile created successfully');
     } catch (error) {
-      console.error('Error creating user profile:', error);
+      console.error('❌ Error creating user profile:', error);
       throw error;
     }
   };
 
-  // ✅ 修复的核心函数
+  // Fixed function - no hooks inside!
   const checkUserRoleAndRedirect = async (userId: string) => {
     try {
+      // Prevent infinite loop
+      if (location.pathname === '/learning-goals') {
+        console.log('⏭️  Already on learning goals page, skipping check');
+        return;
+      }
+      
       console.log('🔍 Checking user status for:', userId);
       
       const userRef = doc(db, 'users', userId);
@@ -149,7 +160,7 @@ export default function AuthPage() {
         return;
       }
       
-      // ✅ 检查是否完成了learning goals
+      // Check if learning goals completed
       if (userDoc.exists()) {
         const userData = userDoc.data();
         const learningGoalsCompleted = userData.learningGoalsCompleted || false;
@@ -160,23 +171,23 @@ export default function AuthPage() {
         });
         
         if (learningGoalsCompleted) {
-          // 已完成learning goals → Dashboard
+          // Learning goals completed → go to dashboard
           console.log('✅ Learning goals completed, redirecting to /dashboard');
           navigate('/dashboard', { replace: true });
         } else {
-          // 未完成learning goals → Learning Goals Page
+          // Learning goals NOT completed → go to learning goals page
           console.log('⏳ Learning goals not completed, redirecting to /learning-goals');
           navigate('/learning-goals', { replace: true });
         }
       } else {
-        // 新用户，没有profile → Learning Goals Page
+        // New user without profile → go to learning goals page
         console.log('🆕 New user without profile, redirecting to /learning-goals');
         navigate('/learning-goals', { replace: true });
       }
       
     } catch (error) {
-      console.error('Error checking user role:', error);
-      // 发生错误，默认跳转到learning goals
+      console.error('❌ Error checking user role:', error);
+      // On error, default to learning goals page
       navigate('/learning-goals', { replace: true });
     }
   };
@@ -204,12 +215,13 @@ export default function AuthPage() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       toast.success('Signed in successfully!');
       
-      // ✅ 登录成功后检查并跳转
+      // Check and redirect after sign in
+      hasChecked.current = false; // Reset flag
       await checkUserRoleAndRedirect(userCredential.user.uid);
       
     } catch (error: any) {
-      console.error('Sign in error:', error);
-      if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+      console.error('❌ Sign in error:', error);
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
         toast.error('Invalid email or password');
       } else {
         toast.error(error.message || 'An error occurred during sign in');
@@ -244,18 +256,16 @@ export default function AuthPage() {
       // Save quiz results if pending
       if (pendingQuizData) {
         await saveQuizResultsToFirestore(user.uid, pendingQuizData);
-        
-        // Don't clear localStorage yet, let LearningGoalsPage handle it
-        console.log('✅ Quiz results saved, quiz data will be used in Learning Goals Page');
+        console.log('✅ Quiz results saved, will be used in Learning Goals Page');
       }
       
       toast.success('Account created successfully!');
       
-      // ✅ 注册成功后，新用户一定跳转到Learning Goals Page
+      // New users always go to Learning Goals Page
       navigate('/learning-goals', { replace: true });
       
     } catch (error: any) {
-      console.error('Sign up error:', error);
+      console.error('❌ Sign up error:', error);
       if (error.code === 'auth/email-already-in-use') {
         toast.error('An account with this email already exists. Please sign in instead.');
       } else {
@@ -273,12 +283,12 @@ export default function AuthPage() {
       const userCredential = await signInWithPopup(auth, provider);
       const user = userCredential.user;
 
-      // Check if user profile exists, create if not
+      // Check if user profile exists
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
 
       if (!userDoc.exists()) {
-        // 新用户，创建profile
+        // New user - create profile
         await createUserProfile(
           user.uid, 
           user.email || '', 
@@ -290,17 +300,18 @@ export default function AuthPage() {
           await saveQuizResultsToFirestore(user.uid, pendingQuizData);
         }
         
-        // 新用户 → Learning Goals Page
+        // New user → Learning Goals Page
         toast.success('Welcome! Please select your learning goals.');
         navigate('/learning-goals', { replace: true });
       } else {
-        // 老用户，检查并跳转
+        // Existing user - check and redirect
         toast.success('Signed in with Google successfully!');
+        hasChecked.current = false;
         await checkUserRoleAndRedirect(user.uid);
       }
       
     } catch (error: any) {
-      console.error('Google sign in error:', error);
+      console.error('❌ Google sign in error:', error);
       toast.error(error.message || 'Failed to sign in with Google');
     } finally {
       setIsLoading(false);
