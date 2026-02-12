@@ -1,5 +1,5 @@
-// DashboardSidebar.tsx - 直接调用Firebase
-// ✅ 不需要创建新文件
+// DashboardSidebar.tsx - 修复版：优先从Firebase读取level
+// ✅ 先从 users.level 读取，如果没有才计算
 
 import React, { useState, useEffect } from 'react';
 import { NavLink } from '@/components/NavLink';
@@ -58,7 +58,7 @@ const bottomNavItems = [
   { title: 'Settings', url: '/settings', icon: Settings },
 ];
 
-// ✅ Level计算函数
+// ✅ Level计算函数（仅作为fallback）
 function calculateLevel(xp: number): string {
   if (xp >= 12000) return 'C2';
   if (xp >= 8000) return 'C1';
@@ -81,31 +81,50 @@ export function DashboardSidebar() {
     streak: { current: 0 }
   });
 
-  // ✅ 从Firebase加载数据
+  // ✅ 从Firebase加载数据 - 优先读取level字段
   useEffect(() => {
     async function fetchData() {
       if (!user) return;
 
       try {
-        // 1️⃣ 获取Streak
+        // 1️⃣ 先从users collection读取level
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+        let level = 'A1';
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          // ✅ 优先读取 level 字段，然后是 quizLevel
+          level = userData.level || userData.quizLevel || 'A1';
+          console.log('👤 Level from Firebase users:', {
+            level: userData.level,
+            quizLevel: userData.quizLevel,
+            final: level
+          });
+        }
+        
+        // 2️⃣ 获取Streak
         const streakData = await getStreak(user.uid);
         
-        // 2️⃣ 获取XP
+        // 3️⃣ 获取XP
         const statsRef = doc(db, 'users', user.uid, 'stats', 'overall');
         const statsSnap = await getDoc(statsRef);
         const totalXP = statsSnap.exists() ? (statsSnap.data().totalPoints || 0) : 0;
         
-        // 3️⃣ 计算Level
-        const level = calculateLevel(totalXP);
+        // 4️⃣ 如果level还是默认值且有XP，才计算
+        if (level === 'A1' && totalXP > 0) {
+          level = calculateLevel(totalXP);
+          console.log('👤 Calculated level from XP:', level);
+        }
         
-        // 4️⃣ 更新state
+        // 5️⃣ 更新state
         setUserProgress({
           level,
           xp: totalXP,
           streak: { current: streakData.currentStreak }
         });
 
-        console.log('👤 Sidebar data loaded:', { level, xp: totalXP, streak: streakData.currentStreak });
+        console.log('👤 Sidebar final data:', { level, xp: totalXP, streak: streakData.currentStreak });
       } catch (error) {
         console.error('Error loading sidebar data:', error);
       }

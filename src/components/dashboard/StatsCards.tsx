@@ -1,5 +1,5 @@
-// StatsCards.tsx - 直接调用Firebase，不创建新文件
-// ✅ 不需要创建dashboardData.ts
+// StatsCards.tsx - 修复版：优先从Firebase读取level
+// ✅ 先从 users.level 读取，如果没有才计算
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
@@ -10,7 +10,7 @@ import { getStreak } from '@/utils/streakTracking';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 
-// ✅ Level计算函数（直接写在这里）
+// ✅ Level计算函数（仅作为fallback）
 function calculateLevel(xp: number): { level: string; name: string } {
   if (xp >= 12000) return { level: 'C2', name: 'Proficiency' };
   if (xp >= 8000) return { level: 'C1', name: 'Advanced' };
@@ -39,43 +39,63 @@ export function StatsCards() {
       try {
         setLoading(true);
 
-        // 1️⃣ 获取Streak
+        // 1️⃣ 先从users collection读取level
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+        let level = 'A1';
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          // ✅ 优先读取 level 字段，然后是 quizLevel
+          level = userData.level || userData.quizLevel || 'A1';
+          console.log('📊 Level from Firebase users:', {
+            level: userData.level,
+            quizLevel: userData.quizLevel,
+            final: level
+          });
+        }
+
+        // 2️⃣ 获取Streak
         const streakData = await getStreak(user.uid);
         
-        // 2️⃣ 获取Total XP
+        // 3️⃣ 获取Total XP
         const statsRef = doc(db, 'users', user.uid, 'stats', 'overall');
         const statsSnap = await getDoc(statsRef);
         const totalXP = statsSnap.exists() ? (statsSnap.data().totalPoints || 0) : 0;
         
-        // 3️⃣ 获取Completed Lessons
+        // 4️⃣ 如果level还是默认值且有XP，才计算
+        if (level === 'A1' && totalXP > 0) {
+          const calculated = calculateLevel(totalXP);
+          level = calculated.level;
+          console.log('📊 Calculated level from XP:', level);
+        }
+        
+        // 5️⃣ 获取Completed Lessons
         const progressRef = doc(db, 'userProgress', user.uid);
         const progressSnap = await getDoc(progressRef);
         const lessonsDone = progressSnap.exists() 
           ? (progressSnap.data().completedLessons?.length || 0) 
           : 0;
         
-        // 4️⃣ 获取Total Lessons
+        // 6️⃣ 获取Total Lessons
         const lessonsSnap = await getDocs(collection(db, 'lessons'));
         const totalLessons = lessonsSnap.size;
         
-        // 5️⃣ 计算Level
-        const levelData = calculateLevel(totalXP);
-        
-        // 6️⃣ 更新state
+        // 7️⃣ 更新state
         setUserProgress({
           streak: {
             current: streakData.currentStreak,
             longest: streakData.longestStreak
           },
-          level: levelData.level,
+          level: level,
           xp: totalXP,
           completedLessons: lessonsDone,
           totalLessons: totalLessons
         });
 
-        console.log('📊 Stats loaded:', {
+        console.log('📊 Stats final data:', {
           streak: streakData.currentStreak,
-          level: levelData.level,
+          level: level,
           xp: totalXP,
           lessons: `${lessonsDone}/${totalLessons}`
         });

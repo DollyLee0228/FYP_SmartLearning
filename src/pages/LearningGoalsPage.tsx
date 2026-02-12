@@ -1,356 +1,367 @@
-// LearningGoalsPage.tsx - 完整版
-// ✅ 读取quiz结果并保存到Firebase
-
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { BookOpen, Library, FileText, Headphones, PenTool, Mic, Check, Sparkles, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { 
+  Target, BookOpen, MessageSquare, FileText, 
+  Mic, Trophy, Clock, ArrowRight, CheckCircle2
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
+import { doc, setDoc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 
 interface LearningGoal {
   id: string;
-  title: string;
+  icon: React.ElementType;
+  label: string;
   description: string;
-  icon: React.ReactNode;
-  color: string;
+  category: string;
 }
 
 const learningGoals: LearningGoal[] = [
   {
     id: 'grammar',
-    title: 'Grammar Fundamentals',
-    description: 'Master English grammar rules and sentence structures',
-    icon: <BookOpen className="w-8 h-8" />,
-    color: 'from-purple-500 to-purple-600',
+    icon: BookOpen,
+    label: 'Master Grammar',
+    description: 'Build a strong foundation in English grammar',
+    category: 'Grammar'
   },
   {
     id: 'vocabulary',
-    title: 'Vocabulary Builder',
-    description: 'Expand your word power with contextual learning',
-    icon: <Library className="w-8 h-8" />,
-    color: 'from-amber-500 to-orange-500',
-  },
-  {
-    id: 'reading',
-    title: 'Reading Comprehension',
-    description: 'Improve reading skills with diverse texts',
-    icon: <FileText className="w-8 h-8" />,
-    color: 'from-blue-500 to-cyan-500',
-  },
-  {
-    id: 'listening',
-    title: 'Listening Skills',
-    description: 'Train your ear with native speakers',
-    icon: <Headphones className="w-8 h-8" />,
-    color: 'from-yellow-500 to-amber-500',
-  },
-  {
-    id: 'writing',
-    title: 'Writing Practice',
-    description: 'Develop clear and effective writing',
-    icon: <PenTool className="w-8 h-8" />,
-    color: 'from-green-500 to-emerald-500',
+    icon: Target,
+    label: 'Expand Vocabulary',
+    description: 'Learn new words and phrases daily',
+    category: 'Vocabulary'
   },
   {
     id: 'speaking',
-    title: 'Speaking & Pronunciation',
-    description: 'Practice speaking with AI feedback',
-    icon: <Mic className="w-8 h-8" />,
-    color: 'from-rose-500 to-pink-500',
+    icon: Mic,
+    label: 'Improve Speaking',
+    description: 'Practice pronunciation and fluency',
+    category: 'Speaking'
   },
+  {
+    id: 'listening',
+    icon: MessageSquare,
+    label: 'Better Listening',
+    description: 'Understand native speakers with ease',
+    category: 'Listening'
+  },
+  {
+    id: 'reading',
+    icon: FileText,
+    label: 'Read Better',
+    description: 'Comprehend articles and books',
+    category: 'Reading'
+  },
+  {
+    id: 'writing',
+    icon: Trophy,
+    label: 'Write Well',
+    description: 'Express yourself clearly in writing',
+    category: 'Writing'
+  }
 ];
 
-const LearningGoalsPage = () => {
+export default function LearningGoalsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [initializing, setInitializing] = useState(true);
+  const [userLevel, setUserLevel] = useState<string>('A1');
 
   useEffect(() => {
-    async function checkGoalsCompleted() {
-      if (!user) {
-        navigate('/auth');
-        return;
-      }
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
 
+    // 获取用户的 quiz level
+    const fetchUserLevel = async () => {
       try {
         const userRef = doc(db, 'users', user.uid);
         const userSnap = await getDoc(userRef);
         
-        if (userSnap.exists() && userSnap.data().learningGoalsCompleted) {
-          console.log('✅ User already completed learning goals, redirecting...');
-          navigate('/dashboard');
-          return;
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          const level = userData.quizLevel || userData.level || 'A1';
+          setUserLevel(level);
+          console.log('📊 User level:', level);
         }
-
-        const settingsRef = doc(db, 'users', user.uid, 'settings', 'preferences');
-        const settingsSnap = await getDoc(settingsRef);
-        
-        if (settingsSnap.exists() && settingsSnap.data().learningGoals) {
-          setSelectedGoals(settingsSnap.data().learningGoals);
-        }
-
-        setInitializing(false);
       } catch (error) {
-        console.error('Error checking goals:', error);
-        setInitializing(false);
+        console.error('Error fetching user level:', error);
       }
-    }
+    };
 
-    checkGoalsCompleted();
+    fetchUserLevel();
   }, [user, navigate]);
 
   const toggleGoal = (goalId: string) => {
-    setSelectedGoals(prev => 
-      prev.includes(goalId) 
+    setSelectedGoals(prev =>
+      prev.includes(goalId)
         ? prev.filter(id => id !== goalId)
         : [...prev, goalId]
     );
   };
 
-  const handleContinue = async () => {
-    if (selectedGoals.length === 0) {
-      toast.error('Please select at least one learning goal');
-      return;
-    }
-
-    if (!user) {
-      toast.error('Please log in first');
-      navigate('/auth');
-      return;
-    }
+  // 🎯 生成 AI 推荐的核心函数
+  const generateRecommendations = async (goals: string[], level: string) => {
+    if (!user) return;
 
     try {
-      setLoading(true);
+      console.log('🤖 Generating recommendations for goals:', goals, 'level:', level);
 
-      // ✅ 读取quiz结果（从localStorage）
-      const pendingLevel = localStorage.getItem('smartlearning_pending_level') || 'A1';
-      const pendingScore = localStorage.getItem('smartlearning_pending_score') || '0';
-      
-      console.log('📊 Quiz results:', { level: pendingLevel, score: pendingScore });
+      // 获取每个选中目标的前3个课程
+      const allRecommendations: any[] = [];
 
-      // 1. 保存learning goals到用户设置
-      const settingsRef = doc(db, 'users', user.uid, 'settings', 'preferences');
-      await setDoc(settingsRef, {
-        learningGoals: selectedGoals,
-        updatedAt: new Date()
-      }, { merge: true });
+      for (const goalCategory of goals) {
+        // 从 lessons 集合获取匹配的课程
+        const lessonsRef = collection(db, 'lessons');
+        const q = query(
+          lessonsRef,
+          where('category', '==', goalCategory),
+          where('level', '==', level),
+          limit(2) // 每个类别获取2个课程
+        );
 
-      // 2. 标记用户已完成learning goals设置
+        const lessonsSnap = await getDocs(q);
+        
+        lessonsSnap.forEach((doc) => {
+          const lessonData = doc.data();
+          allRecommendations.push({
+            id: doc.id,
+            title: lessonData.title,
+            description: lessonData.description || `Learn ${lessonData.title}`,
+            category: goalCategory,
+            level: level,
+            type: 'lesson',
+            route: `/modules/${goalCategory.toLowerCase()}/lesson/${doc.id}`,
+            score: 0.8 + Math.random() * 0.2, // 随机分数 0.8-1.0
+            createdAt: new Date().toISOString()
+          });
+        });
+      }
+
+      // 如果没有找到课程，创建默认推荐
+      if (allRecommendations.length === 0) {
+        console.warn('⚠️ No lessons found, creating default recommendations');
+        
+        goals.forEach((goalCategory, index) => {
+          allRecommendations.push({
+            id: `default-${goalCategory}-${Date.now()}-${index}`,
+            title: `${goalCategory} Basics`,
+            description: `Start your ${goalCategory.toLowerCase()} learning journey`,
+            category: goalCategory,
+            level: level,
+            type: 'lesson',
+            route: `/modules/${goalCategory.toLowerCase()}`,
+            score: 0.9 - index * 0.1,
+            createdAt: new Date().toISOString()
+          });
+        });
+      }
+
+      // 按分数排序
+      allRecommendations.sort((a, b) => b.score - a.score);
+
+      // 保存到 Firebase recommendations 集合
+      const recommendationsRef = doc(db, 'recommendations', user.uid);
+      await setDoc(recommendationsRef, {
+        recommendations: allRecommendations,
+        userLevel: level,
+        learningGoals: goals,
+        generatedAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+      });
+
+      console.log('✅ Recommendations saved successfully:', allRecommendations.length, 'items');
+      return allRecommendations;
+
+    } catch (error) {
+      console.error('❌ Error generating recommendations:', error);
+      throw error;
+    }
+  };
+
+  const handleContinue = async () => {
+    if (selectedGoals.length === 0) {
+      alert('Please select at least one learning goal');
+      return;
+    }
+
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      // 1️⃣ 保存学习目标到 users 集合
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
-        learningGoalsCompleted: true,
-        learningGoals: selectedGoals,
-        quizLevel: pendingLevel,  // ✅ 保存quiz结果
-        quizScore: parseInt(pendingScore),
-        completedAt: new Date()
-      }, { merge: true });
-
-      // 3. 创建/更新userProgress
-      const progressRef = doc(db, 'userProgress', user.uid);
-      const progressSnap = await getDoc(progressRef);
-      
-      if (!progressSnap.exists()) {
-        // 新用户 - 创建初始progress
-        await setDoc(progressRef, {
-          userId: user.uid,
-          level: pendingLevel,  // ✅ 使用quiz的level
-          xp: 0,
-          totalLessonsCompleted: 0,
-          completedLessons: [],
-          moduleProgress: {},
+      await setDoc(
+        userRef,
+        {
           learningGoals: selectedGoals,
-          quizScore: parseInt(pendingScore),  // ✅ 保存quiz分数
-          streak: {
-            current: 0,
-            longest: 0,
-            lastActiveDate: '',
-          },
-          createdAt: new Date(),
-          lastUpdated: new Date(),
-        });
-        console.log('✅ Created initial user progress with quiz level:', pendingLevel);
-      } else {
-        // 已存在的progress - 更新learning goals和level
-        await setDoc(progressRef, {
-          learningGoals: selectedGoals,
-          level: pendingLevel,
-          quizScore: parseInt(pendingScore),
-          lastUpdated: new Date(),
-        }, { merge: true });
-        console.log('✅ Updated existing user progress');
-      }
+          learningGoalsCompleted: true,
+          level: userLevel, // ✅ 确保 level 字段存在
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      );
 
-      // 4. 初始化stats（如果不存在）
-      const statsRef = doc(db, 'users', user.uid, 'stats', 'overall');
-      const statsSnap = await getDoc(statsRef);
-      
-      if (!statsSnap.exists()) {
-        await setDoc(statsRef, {
-          totalPoints: 0,
-          achievementsUnlocked: 0,
-          weeklyXP: 0
-        });
-      }
+      console.log('✅ Learning goals saved to users collection');
 
-      const streakRef = doc(db, 'users', user.uid, 'stats', 'streak');
-      const streakSnap = await getDoc(streakRef);
-      
-      if (!streakSnap.exists()) {
-        await setDoc(streakRef, {
-          currentStreak: 0,
-          longestStreak: 0,
-          lastCompletedDate: null,
-          streakHistory: []
-        });
-      }
+      // 2️⃣ 生成 AI 推荐并保存到 recommendations 集合
+      await generateRecommendations(selectedGoals, userLevel);
 
-      // ✅ 清除localStorage的临时数据
-      localStorage.removeItem('smartlearning_pending_level');
-      localStorage.removeItem('smartlearning_pending_score');
-      
-      console.log('✅ Learning goals and quiz results saved successfully');
-      
-      toast.success('Great choices! Let\'s start learning!');
-      
+      console.log('✅ All data saved successfully, redirecting to dashboard...');
+
+      // 3️⃣ 跳转到 Dashboard
       setTimeout(() => {
         navigate('/dashboard');
       }, 500);
 
     } catch (error) {
       console.error('❌ Error saving learning goals:', error);
-      toast.error('Failed to save your goals. Please try again.');
+      alert('Failed to save learning goals. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
-    },
-  };
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-12 px-4">
+      <div className="max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-8"
+        >
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 mb-4">
+            <Target className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold mb-2">What are your learning goals?</h1>
+          <p className="text-muted-foreground">
+            Select the areas you want to improve (you can change these later)
+          </p>
+          <Badge variant="outline" className="mt-2">
+            Your Level: {userLevel}
+          </Badge>
+        </motion.div>
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 },
-  };
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
+        >
+          {learningGoals.map((goal, index) => {
+            const Icon = goal.icon;
+            const isSelected = selectedGoals.includes(goal.category);
 
-  if (initializing) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-purple-950/20 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-          <p className="text-muted-foreground">Loading...</p>
+            return (
+              <motion.div
+                key={goal.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.1 * index }}
+              >
+                <Card
+                  className={`p-6 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                    isSelected
+                      ? 'border-primary bg-primary/5 shadow-md'
+                      : 'hover:border-primary/50'
+                  }`}
+                  onClick={() => toggleGoal(goal.category)}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex items-center gap-3 flex-1">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-primary text-white'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold mb-1">{goal.label}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {goal.description}
+                        </p>
+                      </div>
+                    </div>
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleGoal(goal.category)}
+                      className="mt-1"
+                    />
+                  </div>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+
+        {selectedGoals.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 className="w-5 h-5 text-blue-600" />
+              <span className="font-semibold text-blue-900">
+                {selectedGoals.length} goal{selectedGoals.length > 1 ? 's' : ''} selected
+              </span>
+            </div>
+            <p className="text-sm text-blue-700">
+              We'll personalize your learning experience based on these goals
+            </p>
+          </motion.div>
+        )}
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="flex justify-center gap-4"
+        >
+          <Button
+            variant="outline"
+            onClick={() => navigate('/dashboard')}
+            disabled={loading}
+          >
+            Skip for now
+          </Button>
+          <Button
+            size="lg"
+            onClick={handleContinue}
+            disabled={selectedGoals.length === 0 || loading}
+            className="gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Setting up...
+              </>
+            ) : (
+              <>
+                Continue to Dashboard
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </Button>
+        </motion.div>
+
+        <div className="mt-8 text-center">
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Clock className="w-4 h-4" />
+            <span>Takes about 30 seconds to complete</span>
+          </div>
         </div>
       </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-purple-950/20 flex flex-col items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="text-center mb-8"
-      >
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <Sparkles className="w-8 h-8 text-purple-500" />
-          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent">
-            What do you want to learn?
-          </h1>
-        </div>
-        <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          Select the areas you'd like to focus on. You can always change this later in Settings.
-        </p>
-      </motion.div>
-
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl w-full mb-8"
-      >
-        {learningGoals.map((goal) => {
-          const isSelected = selectedGoals.includes(goal.id);
-          
-          return (
-            <motion.div key={goal.id} variants={itemVariants}>
-              <Card
-                onClick={() => toggleGoal(goal.id)}
-                className={`relative cursor-pointer p-6 transition-all duration-300 hover:scale-105 border-2 ${
-                  isSelected 
-                    ? 'border-purple-500 bg-purple-500/10' 
-                    : 'border-border hover:border-purple-500/50'
-                }`}
-              >
-                {isSelected && (
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="absolute top-3 right-3 w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center"
-                  >
-                    <Check className="w-4 h-4 text-white" />
-                  </motion.div>
-                )}
-                
-                <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${goal.color} flex items-center justify-center text-white mb-4`}>
-                  {goal.icon}
-                </div>
-                
-                <h3 className="text-lg font-semibold mb-2">{goal.title}</h3>
-                <p className="text-sm text-muted-foreground">{goal.description}</p>
-              </Card>
-            </motion.div>
-          );
-        })}
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="flex flex-col items-center gap-4"
-      >
-        <Button
-          onClick={handleContinue}
-          size="lg"
-          className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-8 py-6 text-lg"
-          disabled={selectedGoals.length === 0 || loading}
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              Saving...
-            </>
-          ) : (
-            <>
-              Continue to Dashboard
-              {selectedGoals.length > 0 && (
-                <span className="ml-2 bg-white/20 px-2 py-0.5 rounded-full text-sm">
-                  {selectedGoals.length} selected
-                </span>
-              )}
-            </>
-          )}
-        </Button>
-        
-        <p className="text-sm text-muted-foreground">
-          Selected: {selectedGoals.length} / {learningGoals.length}
-        </p>
-      </motion.div>
     </div>
   );
-};
-
-export default LearningGoalsPage;
+}
